@@ -57,7 +57,9 @@ layer depends on their interfaces only.
    ML63Q25x7_DFP 1.1.0 (or a compatible newer pack).
 2. Select **File > Import > General > Existing Projects into Workspace**.
 3. Select `PlantDoctorWorkspace/PlantDoctor` as the root directory.
-4. Confirm that the project `PlantDoctor` is detected, then finish the import.
+4. Confirm that the project `PlantDoctor` is detected. Leave **Copy projects
+   into workspace** cleared so the relative CommonFiles link retains the
+   repository layout, then finish the import.
 5. Select `Debug` or `Release` under **Build Configurations > Set Active**.
 6. Run **Project > Clean**, followed by **Project > Build Project**.
 

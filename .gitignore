@@ -1,0 +1,111 @@
+# =============================================================================
+# DT-EBML63Q2557 / LEXIDE-Omega / Eclipse CDT
+# =============================================================================
+
+# Eclipse / LEXIDE workspace metadata
+.metadata/
+**/.metadata/
+RemoteSystemsTempFiles/
+.recommenders/
+**/.recommenders/
+
+# Machine-generated CDT index / scanner information
+**/.settings/language.settings.xml
+**/.settings/org.eclipse.cdt.core.prefs
+
+# Build output directories
+**/Debug/
+**/Release/
+**/build/
+**/Build/
+**/out/
+**/Output/
+
+# Compiler / assembler / linker generated files
+*.o
+*.obj
+*.d
+*.dep
+*.su
+*.gcno
+*.gcda
+*.map
+*.elf
+*.axf
+*.lst
+*.lis
+*.sym
+*.size
+*.log
+
+# Generated firmware images
+# Keep vendor/reference HEX files outside build directories if they are needed.
+**/Debug/*.hex
+**/Release/*.hex
+**/build/*.hex
+**/Build/*.hex
+**/out/*.hex
+**/Output/*.hex
+**/Debug/*.bin
+**/Release/*.bin
+**/build/*.bin
+**/Build/*.bin
+**/out/*.bin
+**/Output/*.bin
+**/Debug/*.srec
+**/Release/*.srec
+**/build/*.srec
+**/Build/*.srec
+**/out/*.srec
+**/Output/*.srec
+
+# Temporary / backup files
+*.tmp
+*.temp
+*.bak
+*.old
+*.orig
+*.rej
+*~
+*.swp
+*.swo
+
+# Runtime logs and generated measurement output
+logs/
+log/
+output/
+outputs/
+captures/
+*.trace
+
+# IDEs other than LEXIDE
+.vs/
+.idea/
+.vscode/
+*.code-workspace
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Python helper tooling, if used later
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# Keep these project files under version control:
+#   .project
+#   .cproject
+#   .settings/ (except machine-generated files ignored above)
+#   linker scripts, startup code, source, headers, and vendor CommonFiles

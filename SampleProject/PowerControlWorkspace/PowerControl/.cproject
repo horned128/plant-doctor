@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<?fileVersion 4.0.0?><cproject storage_type_id="org.eclipse.cdt.core.XmlProjectDescriptionStorage">
+	<storageModule moduleId="org.eclipse.cdt.core.settings">
+		<cconfiguration id="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.config.debug.1528529798">
+			<storageModule buildSystemId="org.eclipse.cdt.managedbuilder.core.configurationDataProvider" id="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.config.debug.1528529798" moduleId="org.eclipse.cdt.core.settings" name="Debug">
+				<externalSettings/>
+				<extensions>
+					<extension id="org.eclipse.cdt.core.ELF" point="org.eclipse.cdt.core.BinaryParser"/>
+					<extension id="com.lapis_tech.lexide.core.errorparser" point="org.eclipse.cdt.core.ErrorParser"/>
+					<extension id="org.eclipse.cdt.core.GmakeErrorParser" point="org.eclipse.cdt.core.ErrorParser"/>
+				</extensions>
+			</storageModule>
+			<storageModule moduleId="cdtBuildSystem" version="4.0.0">
+				<configuration artifactName="${ProjName}" buildArtefactType="com.lapis_tech.lexide.managedbuilder.ui.propertyLapis" buildProperties="org.eclipse.cdt.build.core.buildArtefactType=com.lapis_tech.lexide.managedbuilder.ui.propertyLapis,org.eclipse.cdt.build.core.buildType=org.eclipse.cdt.build.core.buildType.release" cleanCommand="rm -f" description="" errorParsers="com.lapis_tech.lexide.core.errorparser;org.eclipse.cdt.core.GmakeErrorParser" id="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.config.debug.1528529798" name="Debug" optionalBuildProperties="org.eclipse.cdt.docker.launcher.containerbuild.property.selectedvolumes=,org.eclipse.cdt.docker.launcher.containerbuild.property.volumes=" parent="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.config.debug">
+					<folderInfo id="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.config.debug.1528529798." name="/" resourcePath="">
+						<toolChain id="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.toolchain.debug.41147061" name="LAPIS Arm LLVM Toolchain" superClass="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.toolchain.debug">
+							<targetPlatform archList="all" binaryParser="org.eclipse.cdt.core.ELF" id="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.platform.lapis.1022577032" isAbstract="false" name="LAPIS Target Platform (LLVM) (ELF)" osList="all" superClass="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.platform.lapis"/>
+							<builder buildPath="${workspace_loc:/PowerControl}/Debug" id="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.builder.make.1077484732" keepEnvironmentInBuildfile="false" managedBuildOn="true" name="Builder (LAPIS) (LLVM) (ARM)" superClass="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.builder.make"/>
+							<tool id="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.tool.common.599874269" name="Common" superClass="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.tool.common"/>
+							<tool id="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.tool.compiler.1180358471" name="Compiler" superClass="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.tool.compiler">
+								<option IS_BUILTIN_EMPTY="false" IS_VALUE_EMPTY="false" id="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.comp.defmacro.1979721688" name="Define &lt;macro&gt; to &lt;value&gt;" superClass="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.comp.defmacro" valueType="definedSymbols">
+									<listOptionValue builtIn="false" value="ML63Q25x7"/>
+									<listOptionValue builtIn="false" value="ML63Q2557"/>
+								</option>
+								<option IS_BUILTIN_EMPTY="false" IS_VALUE_EMPTY="false" id="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.comp.includepath.765147237" name="Add directory to include search path" superClass="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.comp.includepath" valueType="includePath">
+									<listOptionValue builtIn="false" value="${cmsis_pack_root}/ARM/CMSIS/5.9.0/CMSIS/Core/Include"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}}&quot;"/>
+									<listOptionValue builtIn="false" value="../../../../CommonFiles/Driver"/>
+									<listOptionValue builtIn="false" value="../../../../CommonFiles/Power"/>
+									<listOptionValue builtIn="false" value="../../../../CommonFiles/Timer"/>
+								</option>
+								<inputType id="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.comp.inputtype.unusellvmlink.1021889760" name="Compiler Input - unuse llvm-link" superClass="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.comp.inputtype.unusellvmlink"/>
+							</tool>
+							<tool id="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.tool.assembler.1344887220" name="Assembler" superClass="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.tool.assembler">
+								<inputType id="com.lapis_tech.lexide.managedbuilder.llvm.elf.ui.asm.inputtype.1650050218" name="ASM Input" superClass="com.lapis_tech.lexide.managedbuilder.llvm.elf.ui.asm.inputtype"/>
+							</tool>
+							<tool id="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.tool.linker.1594432932" name="Linker" superClass="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.tool.linker">
+								<option IS_BUILTIN_EMPTY="false" IS_VALUE_EMPTY="false" id="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.link.scriptfiles.1629824298" name="Script files" superClass="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.link.scriptfiles" valueType="stringList">
+									<listOptionValue builtIn="false" value="../ML63Q25x7_lccarm.ld"/>
+								</option>
+								<inputType id="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.link.inputtype.515771623" name="Linker Input" superClass="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.link.inputtype"/>
+							</tool>
+							<tool id="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.tool.createflashimage.562516693" name="Create Flash Image" superClass="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.tool.createflashimage"/>
+							<tool id="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.tool.objectreader.211136860" name="Object Reader" superClass="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.tool.objectreader"/>
+							<tool id="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.tool.printsize.961186392" name="Print Size" superClass="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.tool.printsize"/>
+							<tool id="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.tool.stackcalculator.1548056917" name="Stack Calculator" superClass="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.tool.stackcalculator"/>
+						</toolChain>
+					</folderInfo>
+				</configuration>
+			</storageModule>
+			<storageModule moduleId="org.eclipse.cdt.core.externalSettings"/>
+		</cconfiguration>
+		<cconfiguration id="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.config.release.743144015">
+			<storageModule buildSystemId="org.eclipse.cdt.managedbuilder.core.configurationDataProvider" id="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.config.release.743144015" moduleId="org.eclipse.cdt.core.settings" name="Release">
+				<externalSettings/>
+				<extensions>
+					<extension id="org.eclipse.cdt.core.ELF" point="org.eclipse.cdt.core.BinaryParser"/>
+					<extension id="com.lapis_tech.lexide.core.errorparser" point="org.eclipse.cdt.core.ErrorParser"/>
+					<extension id="org.eclipse.cdt.core.GmakeErrorParser" point="org.eclipse.cdt.core.ErrorParser"/>
+				</extensions>
+			</storageModule>
+			<storageModule moduleId="cdtBuildSystem" version="4.0.0">
+				<configuration artifactName="${ProjName}" buildArtefactType="com.lapis_tech.lexide.managedbuilder.ui.propertyLapis" buildProperties="org.eclipse.cdt.build.core.buildArtefactType=com.lapis_tech.lexide.managedbuilder.ui.propertyLapis,org.eclipse.cdt.build.core.buildType=org.eclipse.cdt.build.core.buildType.release" cleanCommand="rm -f" description="" errorParsers="com.lapis_tech.lexide.core.errorparser;org.eclipse.cdt.core.GmakeErrorParser" id="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.config.release.743144015" name="Release" parent="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.config.release">
+					<folderInfo id="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.config.release.743144015." name="/" resourcePath="">
+						<toolChain id="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.toolchain.release.971398344" name="LAPIS Arm LLVM Toolchain" superClass="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.toolchain.release">
+							<targetPlatform archList="all" binaryParser="org.eclipse.cdt.core.ELF" id="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.platform.lapis.990727936" isAbstract="false" name="LAPIS Target Platform (LLVM) (ELF)" osList="all" superClass="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.platform.lapis"/>
+							<builder buildPath="${workspace_loc:/PowerControl}/Release" id="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.builder.make.914708559" keepEnvironmentInBuildfile="false" managedBuildOn="true" name="Builder (LAPIS) (LLVM) (ARM)" superClass="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.builder.make"/>
+							<tool id="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.tool.common.1726505583" name="Common" superClass="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.tool.common"/>
+							<tool id="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.tool.compiler.1916234190" name="Compiler" superClass="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.tool.compiler">
+								<option IS_BUILTIN_EMPTY="false" IS_VALUE_EMPTY="false" id="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.comp.defmacro.1693735494" name="Define &lt;macro&gt; to &lt;value&gt;" superClass="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.comp.defmacro" valueType="definedSymbols">
+									<listOptionValue builtIn="false" value="ML63Q25x7"/>
+								</option>
+								<option IS_BUILTIN_EMPTY="false" IS_VALUE_EMPTY="false" id="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.comp.includepath.1757886692" name="Add directory to include search path" superClass="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.comp.includepath" valueType="includePath">
+									<listOptionValue builtIn="false" value="${cmsis_pack_root}/ARM/CMSIS/6.1.0/CMSIS/Core/Include"/>
+								</option>
+								<inputType id="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.comp.inputtype.unusellvmlink.692860318" name="Compiler Input - unuse llvm-link" superClass="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.comp.inputtype.unusellvmlink"/>
+							</tool>
+							<tool id="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.tool.assembler.273400187" name="Assembler" superClass="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.tool.assembler">
+								<inputType id="com.lapis_tech.lexide.managedbuilder.llvm.elf.ui.asm.inputtype.223882037" name="ASM Input" superClass="com.lapis_tech.lexide.managedbuilder.llvm.elf.ui.asm.inputtype"/>
+							</tool>
+							<tool id="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.tool.linker.228863865" name="Linker" superClass="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.tool.linker">
+								<option IS_BUILTIN_EMPTY="false" IS_VALUE_EMPTY="false" id="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.link.scriptfiles.1137676719" name="Script files" superClass="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.link.scriptfiles" valueType="stringList">
+									<listOptionValue builtIn="false" value="../ML63Q25x7_lccarm.ld"/>
+								</option>
+								<inputType id="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.link.inputtype.1096877565" name="Linker Input" superClass="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.link.inputtype"/>
+							</tool>
+							<tool id="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.tool.createflashimage.1232226344" name="Create Flash Image" superClass="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.tool.createflashimage"/>
+							<tool id="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.tool.objectreader.2120906157" name="Object Reader" superClass="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.tool.objectreader"/>
+							<tool id="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.tool.printsize.1152787345" name="Print Size" superClass="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.tool.printsize"/>
+							<tool id="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.tool.stackcalculator.997511401" name="Stack Calculator" superClass="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.tool.stackcalculator"/>
+						</toolChain>
+					</folderInfo>
+				</configuration>
+			</storageModule>
+			<storageModule moduleId="org.eclipse.cdt.core.externalSettings"/>
+		</cconfiguration>
+	</storageModule>
+	<storageModule moduleId="cdtBuildSystem" version="4.0.0">
+		<project id="PowerControl.com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.prjtype.lapis.exe.1861711246" name="Executable (LAPIS)" projectType="com.lapis_tech.lexide.managedbuilder.llvm.arm.ui.prjtype.lapis.exe"/>
+	</storageModule>
+	<storageModule moduleId="scannerConfiguration">
+		<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId=""/>
+	</storageModule>
+	<storageModule moduleId="org.eclipse.cdt.core.LanguageSettingsProviders"/>
+	<storageModule moduleId="org.eclipse.cdt.core.language.mapping">
+		<project-mappings>
+			<content-type-mapping configuration="" content-type="org.eclipse.cdt.core.cHeader" language="com.lapis_tech.lexide.parser.ccu8"/>
+			<content-type-mapping configuration="" content-type="org.eclipse.cdt.core.cSource" language="com.lapis_tech.lexide.parser.ccu8"/>
+		</project-mappings>
+	</storageModule>
+	<storageModule moduleId="org.eclipse.cdt.make.core.buildtargets"/>
+</cproject>

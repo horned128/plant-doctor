@@ -1,0 +1,10 @@
+Project.CreatedVersion=2.0.0
+Project.LatestVersion=2.0.0
+TargetMCU.Category=
+TargetMCU.Device=ML63Q25x7
+TargetMCU.Family=ML63Q2500
+TargetMCU.Group=
+TargetMCU.LSI=
+ToolchainVersion.UseLatest=true
+ToolchainVersion.Version=
+eclipse.preferences.version=1

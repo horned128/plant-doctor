@@ -41,3 +41,12 @@ assembler, linker, runtime libraries, device header, linker script, and CMSIS
 pack directly. The normal graphical LEXIDE import/build path remains the
 intended workflow and should be run once on the development PC before hardware
 download.
+
+## Debug-probe connectivity
+
+Windows reports the connected MCU-Link as `MCU-LINK (r0FB) CMSIS-DAP V3.172`.
+Using LEXIDE's OpenOCD 0.12.0 with `cmsis-dap.cfg` and the device pack's
+`ml63q25x7.cfg` succeeded at 500 kHz SWD: DPIDR `0x0BC11477` was read and a
+Cortex-M0+ r0p1 target with four breakpoints and two watchpoints was detected.
+This check did not erase or program target flash; download and on-board behavior
+still require the explicit hardware procedure in `README.md`.

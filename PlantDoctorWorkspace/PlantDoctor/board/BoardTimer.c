@@ -14,6 +14,19 @@
 static volatile uint8_t s_pendingTicks;
 static volatile bool s_tickOverflow;
 
+static bool BoardTimer_WaitUntilRunning(void)
+{
+	uint32_t remaining = PLANT_DOCTOR_TIMER_START_TIMEOUT_LOOPS;
+
+	/* TMSTAT is synchronized to LSCLK and does not change immediately. */
+	while ((timer0_getStatus() == 0U) && (remaining > 0UL))
+	{
+		--remaining;
+	}
+
+	return (timer0_getStatus() != 0U);
+}
+
 bool BoardTimer_Init(void)
 {
 	uint32_t interruptState = __get_PRIMASK();
@@ -34,7 +47,7 @@ bool BoardTimer_Init(void)
 		__enable_irq();
 	}
 
-	return (timer0_getStatus() != 0U);
+	return BoardTimer_WaitUntilRunning();
 }
 
 bool BoardTimer_Take10MsTick(void)

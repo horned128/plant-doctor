@@ -17,8 +17,8 @@ and converted to Intel HEX.
 
 | Configuration | Optimization | Failures | Warnings | `text` | `data` | `bss` | `dec` |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| Debug | `-O0`, DWARF 4 | 0 | 0 | 12,343 | 4,100 | 100 | 16,543 |
-| Release | `-O2` | 0 | 0 | 9,532 | 4,104 | 104 | 13,740 |
+| Debug | `-O0`, DWARF 4 | 0 | 0 | 12,407 | 4,100 | 100 | 16,607 |
+| Release | `-O2` | 0 | 0 | 9,552 | 4,104 | 104 | 13,760 |
 
 The size report includes the linker-script heap reservation. Application code
 does not call `malloc`, `calloc`, `realloc`, `free`, or C++ allocation APIs.
@@ -30,6 +30,19 @@ For both configurations, ELF inspection confirms:
 - `.codeoption` is exactly 64 bytes at `0x1003FFC0`.
 - `PlantDoctor.elf` and `PlantDoctor.hex` are generated under the selected
   build directory; these generated artifacts are intentionally Git-ignored.
+
+## Hardware-debug correction (2026-07-20)
+
+The first hardware run entered `APP_STATE_ERROR` with
+`PLANT_DOCTOR_ERROR_TIMER`, although Timer0 subsequently counted normally.
+`TMSTAT` is synchronized to LSCLK and did not report the running state
+immediately after `timer0_start()`. `BoardTimer_Init()` now waits for the status
+with a bounded timeout instead of treating the first status read as a failure.
+
+Both configurations were rebuilt from all 38 C translation units after this
+correction. The table above records the corrected-build sizes. The target must
+still be reprogrammed with this build before the LCD and switch path can be
+verified on hardware.
 
 ## LEXIDE headless note
 

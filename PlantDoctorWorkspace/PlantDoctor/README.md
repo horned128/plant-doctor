@@ -61,7 +61,10 @@ layer depends on their interfaces only.
    into workspace** cleared so the relative CommonFiles link retains the
    repository layout, then finish the import.
 5. Select `Debug` or `Release` under **Build Configurations > Set Active**.
-6. Run **Project > Clean**, followed by **Project > Build Project**.
+6. If a previous debug session is active, click the red **Terminate** button.
+   Suspending the target is not sufficient because OpenOCD/GDB can keep
+   `PlantDoctor.elf` open.
+7. Run **Project > Clean**, followed by **Project > Build Project**.
 
 Both configurations define `ML63Q25x7` and `ML63Q2557`, use the
 `ML63Q25x7_lccarm.ld` linker script, and refer to CommonFiles with relative
@@ -96,7 +99,8 @@ the target-voltage indication before attempting a connection.
 
 1. Reset or power-cycle the board.
 2. Confirm the LCD title and `BOARD TEST` line.
-3. Confirm LED1 toggles at a one-second interval.
+3. Confirm LED1 toggles at a one-second interval. Alternating
+   LED1/LED2/LED3 at 250 ms is the error indication, not the normal heartbeat.
 4. Press SW1 through SW4 individually and confirm the matching LCD text.
 5. Release each switch and confirm that `BOARD TEST` returns.
 6. Halt in the debugger and inspect `s_state` in `AppStateMachine.c`; normal
@@ -107,3 +111,6 @@ enables the backlight. Then check P7.2 reset, P7.3 SCLF0, P7.4 SDAF0, I2C ACK
 from address `0x7C`, and the state-machine error code. A visible error LED
 pattern with no LCD usually means LCD initialization, I2C wiring, or the 5 V
 rail failed.
+
+See `HARDWARE_DIAGNOSTICS.md` for the first-board diagnosis and debugger values
+to inspect if the corrected build still enters the error state.

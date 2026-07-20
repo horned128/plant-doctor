@@ -1,116 +1,116 @@
-# Plant Doctor bring-up firmware
+# Plant Doctor Bring-upファームウェア
 
-This project is the first hardware bring-up firmware for DATA TECNO's
-DT-EBML63Q2557 board. It uses a bare-metal superloop and an explicit state
-machine. Dynamic allocation is not used.
+このプロジェクトは、データ・テクノ製DT-EBML63Q2557ボード向けの最初の
+実機Bring-upファームウェアです。ベアメタルのスーパーループと明示的な
+状態機械を使用し、動的メモリ確保は使用しません。
 
-## Bring-up behavior
+## Bring-up動作
 
-- Enables `POWER_KEEP` and the board 5 V regulator.
-- Runs Timer0 as a 10 ms auto-reload system tick.
-- Blinks LED1 once per second in `MONITOR`.
-- Initializes the LCD and displays:
+- `POWER_KEEP`と基板上の5 Vレギュレータを有効化する
+- Timer0を10 ms周期の自動リロード式システムTickとして動作させる
+- `MONITOR`状態でLED1を1秒周期で点滅させる
+- LCDを初期化して次の文字列を表示する
 
   ```text
   PLANT DOCTOR
   BOARD TEST
   ```
 
-- Debounces the four push switches every 10 ms. Pressing a switch displays
-  `SW1 PRESSED` through `SW4 PRESSED`; LED2/LED3 also indicate switch groups.
-- Enters `ERROR` on a detected bring-up fault. The LCD shows an error label
-  when available, while LED1/LED2/LED3 show an alternating 250 ms pattern.
+- 4個の押しボタンを10 ms周期でデバウンスする。スイッチを押すと
+  `SW1 PRESSED`～`SW4 PRESSED`を表示し、LED2/LED3でもスイッチグループを示す
+- Bring-upエラーを検出すると`ERROR`へ遷移する。LCDが使用可能な場合は
+  エラー名を表示し、LED1/LED2/LED3を250 ms周期で交互点滅させる
 
-Timer0 and Timer1 interrupt handlers only update a counter or completion flag.
-LCD I2C transfers are performed synchronously in the main context with bounded
-timeouts. Sensor, pump, AI, and storage modules are non-operating extension
-points in this revision.
+Timer0とTimer1の割り込みハンドラは、カウンタまたは完了フラグの更新だけを
+行います。LCDのI2C転送はmainコンテキストで同期的に実行し、待機処理には
+上限を設けています。この版のセンサ、ポンプ、AI、ストレージモジュールは、
+動作を伴わない将来拡張用の境界です。
 
-## Architecture
+## アーキテクチャ
 
 ```text
 src/main.c
   -> app/App
        -> app/AppStateMachine
        -> board/Board
-       -> sensors/SensorManager       (stub boundary)
-       -> ai/PlantAi                   (stub boundary)
-       -> actuator/PumpControl         (disabled stub)
-       -> storage/PlantLog             (stub boundary)
+       -> sensors/SensorManager       （スタブ境界）
+       -> ai/PlantAi                  （スタブ境界）
+       -> actuator/PumpControl        （無効化されたスタブ）
+       -> storage/PlantLog            （スタブ境界）
 
 board/Board
-  -> CommonFiles/Driver               clock, watchdog, Timer0
-  -> CommonFiles/Power                POWER_KEEP, generic input/output
+  -> CommonFiles/Driver               クロック、ウォッチドッグ、Timer0
+  -> CommonFiles/Power                POWER_KEEP、汎用入出力
 
 ui/LcdUi
   -> drivers/Lcd
        -> drivers/LcdI2cf0
-       -> CommonFiles/Timer            command delays on Timer1
+       -> CommonFiles/Timer            Timer1によるコマンド待機
 ```
 
-Hardware registers are confined to `board/` and `drivers/`. The application
-layer depends on their interfaces only.
+ハードウェアレジスタへのアクセスは`board/`と`drivers/`に限定しています。
+アプリケーション層は、それらのインターフェースだけに依存します。
 
-## LEXIDE-Ω import and build
+## LEXIDE-Ωへのインポートとビルド
 
-1. In LEXIDE's CMSIS Pack manager, install ARM CMSIS 5.9.0 and ROHM
-   ML63Q25x7_DFP 1.1.0 (or a compatible newer pack).
-2. Select **File > Import > General > Existing Projects into Workspace**.
-3. Select `PlantDoctorWorkspace/PlantDoctor` as the root directory.
-4. Confirm that the project `PlantDoctor` is detected. Leave **Copy projects
-   into workspace** cleared so the relative CommonFiles link retains the
-   repository layout, then finish the import.
-5. Select `Debug` or `Release` under **Build Configurations > Set Active**.
-6. If a previous debug session is active, click the red **Terminate** button.
-   Suspending the target is not sufficient because OpenOCD/GDB can keep
-   `PlantDoctor.elf` open.
-7. Run **Project > Clean**, followed by **Project > Build Project**.
+1. LEXIDEのCMSIS PackマネージャでARM CMSIS 5.9.0とROHM
+   ML63Q25x7_DFP 1.1.0（または互換性のある新しいPack）をインストールする
+2. **File > Import > General > Existing Projects into Workspace** を選択する
+3. ルートディレクトリに`PlantDoctorWorkspace/PlantDoctor`を指定する
+4. `PlantDoctor`プロジェクトが検出されることを確認する。CommonFilesへの
+   相対リンクとリポジトリ配置を維持するため、**Copy projects into workspace**
+   は選択せずにインポートを完了する
+5. **Build Configurations > Set Active** で`Debug`または`Release`を選択する
+6. 以前のデバッグセッションが動作中なら、赤い **Terminate** ボタンで終了する。
+   OpenOCD/GDBが`PlantDoctor.elf`を開いたままにする場合があるため、
+   ターゲットのSuspendだけでは不十分
+7. **Project > Clean**、続いて **Project > Build Project** を実行する
 
-Both configurations define `ML63Q25x7` and `ML63Q2557`, use the
-`ML63Q25x7_lccarm.ld` linker script, and refer to CommonFiles with relative
-paths. No user-specific absolute path is stored in the project.
+両構成とも`ML63Q25x7`と`ML63Q2557`を定義し、リンカスクリプト
+`ML63Q25x7_lccarm.ld`を使用します。CommonFilesは相対パスで参照し、
+特定ユーザーの絶対パスをプロジェクト内に保存しません。
 
-The project-local linker script retains the 64-byte vendor `.codeoption`
-section at `0x1003FFC0`, outside the normal `0x10000000..0x1003FFBF` program
-flash region. This prevents link-time garbage collection from removing the
-watchdog option words.
+プロジェクト固有のリンカスクリプトは、通常のプログラムフラッシュ領域
+`0x10000000..0x1003FFBF`の外側にある`0x1003FFC0`へ、ベンダー定義の
+64バイト`.codeoption`セクションを保持します。これにより、リンク時の
+ガベージコレクションでウォッチドッグのオプションワードが削除されることを防ぎます。
 
-## MCU-Link programming checklist
+## MCU-Linkによる書き込み手順
 
-1. Power the DT-EBML63Q2557 through USB Type-C.
-2. Connect MCU-Link to the board's SWD signals (SWDIO, SWCLK, GND, and target
-   reference voltage). Do not use the MCU-Link target-power output when the
-   board is already USB-powered.
-3. Connect MCU-Link to the PC through USB.
-4. Open **Run > Debug Configurations...**, create a **LAPIS GDB Debugging
-   (Arm)** configuration, and select project `PlantDoctor` plus
-   `Debug/PlantDoctor.elf` on the Main tab.
-5. On the Debugger tab, select `CMSIS-DAP` as the ICE. LEXIDE then uses its
-   `cmsis-dap.cfg`; the selected ML63Q25x7 device pack supplies
-   `Cfg/ml63q25x7.cfg`, which selects SWD and the 256 KiB flash layout.
-6. On the Startup tab, enable loading the project executable and **Verify
-   Flash Memory**, then start **Debug**. Resume from `main` after the reset,
-   halt, download, and verification sequence finishes.
+1. DT-EBML63Q2557へUSB Type-Cから給電する
+2. MCU-Linkを基板のSWD信号（SWDIO、SWCLK、GND、ターゲット基準電圧）へ
+   接続する。基板がUSB給電されている場合は、MCU-Linkのターゲット電源出力を
+   使用しない
+3. MCU-LinkをUSBでPCへ接続する
+4. **Run > Debug Configurations...** を開き、**LAPIS GDB Debugging (Arm)**
+   構成を作成する。Mainタブで`PlantDoctor`プロジェクトと
+   `Debug/PlantDoctor.elf`を選択する
+5. DebuggerタブのICEに`CMSIS-DAP`を選択する。LEXIDEは`cmsis-dap.cfg`を
+   使用し、選択中のML63Q25x7デバイスパックから`Cfg/ml63q25x7.cfg`が
+   提供される。この設定によりSWDと256 KiBのフラッシュ配置が選択される
+6. Startupタブでプロジェクト実行ファイルのロードと **Verify Flash Memory**
+   を有効にして **Debug** を開始する。リセット、停止、ダウンロード、検証が
+   完了した後、`main`から実行を再開する
 
-Exact probe names can vary with the installed LEXIDE/OpenOCD release. Verify
-the target-voltage indication before attempting a connection.
+プローブ名は、インストールしたLEXIDE/OpenOCDのリリースによって異なる場合が
+あります。接続を試す前に、ターゲット電圧の表示を確認してください。
 
-## Hardware confirmation
+## 実機確認
 
-1. Reset or power-cycle the board.
-2. Confirm the LCD title and `BOARD TEST` line.
-3. Confirm LED1 toggles at a one-second interval. Alternating
-   LED1/LED2/LED3 at 250 ms is the error indication, not the normal heartbeat.
-4. Press SW1 through SW4 individually and confirm the matching LCD text.
-5. Release each switch and confirm that `BOARD TEST` returns.
-6. Halt in the debugger and inspect `s_state` in `AppStateMachine.c`; normal
-   operation is `APP_STATE_MONITOR` with `PLANT_DOCTOR_ERROR_NONE`.
+1. 基板をリセットするか、電源を再投入する
+2. LCDにタイトルと`BOARD TEST`が表示されることを確認する
+3. LED1が1秒周期で点滅することを確認する。LED1/LED2/LED3の250 ms周期の
+   交互点滅はエラー表示であり、通常のハートビートではない
+4. SW1～SW4を個別に押し、対応する文字列がLCDに表示されることを確認する
+5. 各スイッチを離し、表示が`BOARD TEST`へ戻ることを確認する
+6. デバッガで停止し、`AppStateMachine.c`の`s_state`を確認する。正常動作時は
+   `APP_STATE_MONITOR`かつ`PLANT_DOCTOR_ERROR_NONE`
 
-If the LCD is blank, first check that P4.6 enables the 5 V regulator and P7.5
-enables the backlight. Then check P7.2 reset, P7.3 SCLF0, P7.4 SDAF0, I2C ACK
-from address `0x7C`, and the state-machine error code. A visible error LED
-pattern with no LCD usually means LCD initialization, I2C wiring, or the 5 V
-rail failed.
+LCDが表示されない場合は、最初にP4.6で5 Vレギュレータが有効になっていることと、
+P7.5でバックライトが有効になっていることを確認します。続いてP7.2のリセット、
+P7.3のSCLF0、P7.4のSDAF0、アドレス`0x7C`からのI2C ACK、状態機械の
+エラーコードを確認します。LCDが表示されずエラーLEDパターンが見える場合は、
+通常、LCD初期化、I2C配線、5 V電源のいずれかが失敗しています。
 
-See `HARDWARE_DIAGNOSTICS.md` for the first-board diagnosis and debugger values
-to inspect if the corrected build still enters the error state.
+初回実機診断の内容と、修正版でもエラー状態になる場合にデバッガで確認する値は、
+`HARDWARE_DIAGNOSTICS.md`を参照してください。

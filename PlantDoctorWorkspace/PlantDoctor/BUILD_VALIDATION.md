@@ -1,65 +1,65 @@
-# Build validation
+# ビルド検証
 
-## Validated environment
+## 検証環境
 
 - LEXIDE-Ω 2.2.0
 - LEXIDE Arm BuildTools `Ver.20260317`
 - ARM CMSIS 5.9.0
 - ROHM ML63Q25x7_DFP 1.1.0
-- Target: ML63Q2557 / Arm Cortex-M0+
+- ターゲット：ML63Q2557 / Arm Cortex-M0+
 
-## Result
+## 結果
 
-All 38 C translation units from PlantDoctor and its linked CommonFiles were
-compiled from scratch with `-mcpu=cortex-m0plus`. The generated assembly was
-assembled, linked with the project linker script and LEXIDE runtime libraries,
-and converted to Intel HEX.
+PlantDoctorとリンクされたCommonFilesを構成する全38個のC翻訳単位を、
+`-mcpu=cortex-m0plus`を指定してクリーンな状態からコンパイルしました。
+生成されたアセンブリをアセンブルし、プロジェクトのリンカスクリプトと
+LEXIDEランタイムライブラリでリンクして、Intel HEXへ変換しました。
 
-| Configuration | Optimization | Failures | Warnings | `text` | `data` | `bss` | `dec` |
+| 構成 | 最適化 | 失敗 | 警告 | `text` | `data` | `bss` | `dec` |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | Debug | `-O0`, DWARF 4 | 0 | 0 | 12,407 | 4,100 | 100 | 16,607 |
 | Release | `-O2` | 0 | 0 | 9,552 | 4,104 | 104 | 13,760 |
 
-The size report includes the linker-script heap reservation. Application code
-does not call `malloc`, `calloc`, `realloc`, `free`, or C++ allocation APIs.
+サイズには、リンカスクリプトで予約したヒープ領域が含まれます。
+アプリケーションコードは`malloc`、`calloc`、`realloc`、`free`、
+またはC++の動的確保APIを呼び出しません。
 
-For both configurations, ELF inspection confirms:
+両構成のELFを検査し、次の項目を確認しました。
 
-- Arm EABI executable for Cortex-M0+ with `Reset_Handler` as the entry path.
-- Strong `TM0_IRQHandler` and `TM1_IRQHandler` definitions are linked.
-- `.codeoption` is exactly 64 bytes at `0x1003FFC0`.
-- `PlantDoctor.elf` and `PlantDoctor.hex` are generated under the selected
-  build directory; these generated artifacts are intentionally Git-ignored.
+- Cortex-M0+用のArm EABI実行ファイルで、`Reset_Handler`が起動経路になっている
+- 強いシンボルとして定義した`TM0_IRQHandler`と`TM1_IRQHandler`がリンクされている
+- `.codeoption`が`0x1003FFC0`に正確に64バイト配置されている
+- 選択したビルドディレクトリ以下に`PlantDoctor.elf`と`PlantDoctor.hex`が生成される
+- 生成された成果物は意図的にGitの追跡対象外としている
 
-## Hardware-debug correction (2026-07-20)
+## 実機デバッグによる修正（2026-07-20）
 
-The first hardware run entered `APP_STATE_ERROR` with
-`PLANT_DOCTOR_ERROR_TIMER`, although Timer0 subsequently counted normally.
-`TMSTAT` is synchronized to LSCLK and did not report the running state
-immediately after `timer0_start()`. `BoardTimer_Init()` now waits for the status
-with a bounded timeout instead of treating the first status read as a failure.
+最初の実機動作では、Timer0がその後正常にカウントしていたにもかかわらず、
+`PLANT_DOCTOR_ERROR_TIMER`によって`APP_STATE_ERROR`へ遷移しました。
+`TMSTAT`はLSCLKに同期するため、`timer0_start()`直後には動作状態を返しません。
+`BoardTimer_Init()`を修正し、最初の状態読み出しを失敗と判定せず、制限時間付きで
+状態変化を待つようにしました。
 
-Both configurations were rebuilt from all 38 C translation units after this
-correction. The table above records the corrected-build sizes. The target must
-still be reprogrammed with this build before the LCD and switch path can be
-verified on hardware.
+修正後に、両構成とも全38個のC翻訳単位から再ビルドしました。上表は修正版の
+サイズを示しています。その後、修正版を実機へ書き込み、LCD表示とスイッチ入力が
+正常に動作することを確認しました。
 
-## LEXIDE headless note
+## LEXIDEヘッドレスビルドに関する注意
 
-LEXIDE's installed Arm managed-build plug-in accesses the Eclipse graphical
-Workbench while evaluating target options. Consequently, CDT's headless-build
-application cannot finish makefile generation in this LEXIDE release. The
-compile/link validation above invokes the same installed LEXIDE compiler,
-assembler, linker, runtime libraries, device header, linker script, and CMSIS
-pack directly. The normal graphical LEXIDE import/build path remains the
-intended workflow and should be run once on the development PC before hardware
-download.
+LEXIDEにインストールされたArm管理ビルドプラグインは、ターゲットオプションの
+評価時にEclipseのグラフィカルWorkbenchへアクセスします。そのため、この
+LEXIDEリリースでは、CDTのヘッドレスビルドからmakefile生成を完了できません。
+上記のコンパイル／リンク検証では、インストール済みのLEXIDEコンパイラ、
+アセンブラ、リンカ、ランタイムライブラリ、デバイスヘッダ、リンカスクリプト、
+CMSIS Packを直接使用しました。通常の開発ではGUI版LEXIDEによるインポートと
+ビルドを使用し、実機へ書き込む前に開発PC上で一度実行してください。
 
-## Debug-probe connectivity
+## デバッグプローブ接続確認
 
-Windows reports the connected MCU-Link as `MCU-LINK (r0FB) CMSIS-DAP V3.172`.
-Using LEXIDE's OpenOCD 0.12.0 with `cmsis-dap.cfg` and the device pack's
-`ml63q25x7.cfg` succeeded at 500 kHz SWD: DPIDR `0x0BC11477` was read and a
-Cortex-M0+ r0p1 target with four breakpoints and two watchpoints was detected.
-This check did not erase or program target flash; download and on-board behavior
-still require the explicit hardware procedure in `README.md`.
+Windows上で、接続したMCU-Linkが`MCU-LINK (r0FB) CMSIS-DAP V3.172`として
+認識されることを確認しました。LEXIDE付属のOpenOCD 0.12.0、`cmsis-dap.cfg`、
+デバイスパックの`ml63q25x7.cfg`を使用し、500 kHzのSWD接続に成功しました。
+DPIDR `0x0BC11477`を読み出し、ブレークポイント4個、ウォッチポイント2個を持つ
+Cortex-M0+ r0p1ターゲットを検出しました。この接続確認ではターゲットフラッシュの
+消去や書き込みを行っていません。書き込みと実機動作の確認には`README.md`の
+手順を使用してください。

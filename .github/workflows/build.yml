@@ -1,0 +1,44 @@
+name: firmware-build
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [Debug, Release]
+
+    steps:
+      - name: Check out Plant Doctor
+        uses: actions/checkout@v4
+
+      - name: Check out CMSIS 6
+        uses: actions/checkout@v4
+        with:
+          repository: ARM-software/CMSIS_6
+          ref: b2dfbe1a20bbd49c2d2c605073799671074bbb30
+          path: external/CMSIS
+
+      - name: Install ARM GCC
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-none-eabi libnewlib-arm-none-eabi ninja-build
+
+      - name: Configure
+        run: >-
+          cmake -S . -B build/${{ matrix.build_type }} -G Ninja
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DCMAKE_TOOLCHAIN_FILE=cmake/arm-none-eabi-toolchain.cmake
+
+      - name: Build
+        run: cmake --build build/${{ matrix.build_type }} --parallel
+
+      - name: Report size
+        run: arm-none-eabi-size build/${{ matrix.build_type }}/PlantDoctor.elf

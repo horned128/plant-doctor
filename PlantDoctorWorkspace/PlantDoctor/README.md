@@ -51,7 +51,17 @@ ui/LcdUi
 ハードウェアレジスタへのアクセスは`board/`と`drivers/`に限定しています。
 アプリケーション層は、それらのインターフェースだけに依存します。
 
-## LEXIDE-Ωへのインポートとビルド
+## VS Codeでのビルドとデバッグ
+
+標準の開発手順はリポジトリルートの
+[`docs/VSCODE_SETUP.md`](../../docs/VSCODE_SETUP.md)にまとめています。
+VS Codeでリポジトリルートを開き、`Ctrl+Shift+B`でDebugビルド、`F5`で
+MCU-Linkへの書き込みとデバッグを実行できます。
+
+CMakeビルドでも`ML63Q25x7`と`ML63Q2557`を定義し、このプロジェクト固有の
+メモリ配置と64バイトの`.codeoption`を維持します。
+
+## LEXIDE-Ω（移行期間の互換手順）
 
 1. LEXIDEのCMSIS PackマネージャでARM CMSIS 5.9.0とROHM
    ML63Q25x7_DFP 1.1.0（または互換性のある新しいPack）をインストールする
@@ -113,4 +123,4 @@ P7.3のSCLF0、P7.4のSDAF0、アドレス`0x7C`からのI2C ACK、状態機械�
 通常、LCD初期化、I2C配線、5 V電源のいずれかが失敗しています。
 
 初回実機診断の内容と、修正版でもエラー状態になる場合にデバッガで確認する値は、
-`HARDWARE_DIAGNOSTICS.md`を参照してください。
+[`docs/HARDWARE_DIAGNOSTICS.md`](docs/HARDWARE_DIAGNOSTICS.md)を参照してください。

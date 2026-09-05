@@ -1,0 +1,11 @@
+{
+  "cmake.cmakePath": "${env:USERPROFILE}/.platformio/packages/tool-cmake/bin/cmake.exe",
+  "cmake.useCMakePresets": "always",
+  "cmake.configureOnOpen": true,
+  "cmake.configurePreset": "debug",
+  "cmake.buildPreset": "debug",
+  "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+  "files.associations": {
+    "*.h": "c"
+  }
+}

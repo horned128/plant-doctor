@@ -1,5 +1,38 @@
 # ビルド検証
 
+## VS Code／ARM GCC移植検証（2026-09-04）
+
+`solist_ai_project_template`の構成を参考に追加したルート`CMakeLists.txt`を、
+次の環境で検証しました。
+
+- VS Code + CMake Tools
+- CMake 3.30.2
+- Ninja 1.9.0
+- Arm GNU Toolchain 14.2.Rel1（GCC 14.2.1）
+- ARM CMSIS 6.3.0
+- ターゲット：ML63Q2557 / Arm Cortex-M0+
+
+既存の全38翻訳単位にGCC用newlibシステムコール1翻訳単位を加え、Debugと
+Releaseを警告0・エラー0でビルドしました。
+
+| 構成 | 最適化 | 失敗 | 警告 | `text` | `data` | `bss` | `dec` |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Debug | `-O0`, DWARF 4 | 0 | 0 | 13,600 | 24 | 112 | 13,736 |
+| Release | `-Os` | 0 | 0 | 9,148 | 24 | 108 | 9,280 |
+
+ELFと生成物について次を確認しました。
+
+- ARM EABI5、soft-float、Cortex-M0+用ELFである
+- エントリポイントは`Reset_Handler`（`0x00000201`）である
+- 強いシンボルの`TM0_IRQHandler`と`TM1_IRQHandler`がリンクされている
+- `.codeoption`は`0x1003FFC0`に64バイト配置されている
+- Debug／ReleaseともELF、Intel HEX、BIN、MAPを生成する
+- LEXIDE付属`openocd_arm.exe` 0.12.0が、CMSIS-DAP設定とROHM DFPの
+  `ml63q25x7.cfg`をエラーなく読み込む
+
+実機フラッシュはこの移植作業では実行していません。既存の実機確認済み
+LEXIDE成果物を残したまま、VS Code成果物を`build/`以下へ分離しています。
+
 ## 検証環境
 
 - LEXIDE-Ω 2.2.0

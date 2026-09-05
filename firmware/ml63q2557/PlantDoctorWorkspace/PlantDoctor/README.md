@@ -26,6 +26,9 @@ Timer0とTimer1の割り込みハンドラは、カウンタまたは完了フ�
 上限を設けています。この版のセンサ、ポンプ、AI、ストレージモジュールは、
 動作を伴わない将来拡張用の境界です。
 
+配線済みセンサの通信と測定値を確認する独立ファームウェアは、
+[`examples/sensor_diagnostic/README.md`](examples/sensor_diagnostic/README.md)を参照してください。
+
 ## アーキテクチャ
 
 ```text

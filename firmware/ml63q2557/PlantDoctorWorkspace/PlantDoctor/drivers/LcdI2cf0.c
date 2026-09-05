@@ -17,11 +17,13 @@
 #include "rdwr_reg.h"
 #include "wdt.h"
 
-#define LCD_I2C_WRITE_MODE          (0UL)
 #define LCD_I2C_ACK                 (0U)
 #define LCD_I2C_BUS_BUSY_MASK       (1UL << 5U)
-#define LCD_I2C_MASTER_MODE_MASK    (1UL << 4U)
-#define LCD_I2C_START_MASK          (1UL << 5U)
+#define LCD_I2C_TRANSMIT_MASK       (1UL << 4U)
+#define LCD_I2C_MASTER_MASK         (1UL << 5U)
+#define LCD_I2C_REPEAT_MASK         (1UL << 2U)
+#define LCD_I2C_TX_NACK_MASK        (1UL << 3U)
+#define LCD_I2C_CLOCK_HOLD_MASK     (1UL << 13U)
 #define LCD_I2C_COMPLETE_MASK       (1UL << 7U)
 #define LCD_I2C_CLEAR_MASK          ((1UL << 7U) | (1UL << 1U))
 #define LCD_I2C_NACK_MASK           (1UL << 0U)
@@ -47,9 +49,13 @@ static bool LcdI2cf0_WaitForMask(uint32_t mask, bool set)
 	return false;
 }
 
-static void LcdI2cf0_Stop(void)
+static bool LcdI2cf0_Stop(void)
 {
-	clear_bit(I2CF0->I2F0CTL, LCD_I2C_START_MASK);
+	clear_bit(I2CF0->I2F0CTL, LCD_I2C_MASTER_MASK |
+		LCD_I2C_CLOCK_HOLD_MASK |
+		LCD_I2C_REPEAT_MASK |
+		LCD_I2C_TX_NACK_MASK);
+	return LcdI2cf0_WaitForMask(LCD_I2C_BUS_BUSY_MASK, false);
 }
 
 static LCD_I2C_STATUS LcdI2cf0_WaitByteComplete(void)
@@ -70,8 +76,10 @@ static LCD_I2C_STATUS LcdI2cf0_WaitByteComplete(void)
 
 void LcdI2cf0_InitNormalMode(uint8_t mode, uint8_t rate)
 {
-	set_reg32(I2CF0->I2F0CTL, ((uint32_t)(mode & 0x03U) | (1UL << 7U)));
+	/* I2F0BC must be set before the module-enable bit according to the MCU manual. */
+	clear_bit(I2CF0->I2F0CTL, (1UL << 7U));
 	write_reg32(I2CF0->I2F0BC, rate);
+	write_reg32(I2CF0->I2F0CTL, ((uint32_t)(mode & 0x03U) | (1UL << 7U)));
 	clear_bit(I2CF0->I2F0MOD, (1UL << 0U));
 	clear_bit(I2CF0->I2F0CTL, (1UL << 12U));
 	clear_bit(I2CF0->I2F0CTL, (1UL << 11U));
@@ -94,14 +102,18 @@ LCD_I2C_STATUS LcdI2cf0_Write(uint8_t slaveAddress, const uint8_t *data, uint16_
 		return LCD_I2C_STATUS_BUS_BUSY_TIMEOUT;
 	}
 
-	set_bit(I2CF0->I2F0CTL, LCD_I2C_MASTER_MODE_MASK | LCD_I2C_WRITE_MODE);
+	/* A preceding sensor receive can leave receiver-only state behind. */
+	clear_bit(I2CF0->I2F0CTL, LCD_I2C_CLOCK_HOLD_MASK |
+		LCD_I2C_REPEAT_MASK |
+		LCD_I2C_TX_NACK_MASK);
+	set_bit(I2CF0->I2F0CTL, LCD_I2C_TRANSMIT_MASK);
 	write_reg32(I2CF0->I2F0DR, slaveAddress);
-	set_bit(I2CF0->I2F0CTL, LCD_I2C_START_MASK);
+	set_bit(I2CF0->I2F0CTL, LCD_I2C_MASTER_MASK);
 
 	status = LcdI2cf0_WaitByteComplete();
 	if (status != LCD_I2C_STATUS_OK)
 	{
-		LcdI2cf0_Stop();
+		(void)LcdI2cf0_Stop();
 		return status;
 	}
 
@@ -111,11 +123,14 @@ LCD_I2C_STATUS LcdI2cf0_Write(uint8_t slaveAddress, const uint8_t *data, uint16_
 		status = LcdI2cf0_WaitByteComplete();
 		if (status != LCD_I2C_STATUS_OK)
 		{
-			LcdI2cf0_Stop();
+			(void)LcdI2cf0_Stop();
 			return status;
 		}
 	}
 
-	LcdI2cf0_Stop();
+	if (!LcdI2cf0_Stop())
+	{
+		return LCD_I2C_STATUS_BUS_BUSY_TIMEOUT;
+	}
 	return LCD_I2C_STATUS_OK;
 }

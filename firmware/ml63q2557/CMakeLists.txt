@@ -78,6 +78,27 @@ set(PLANT_DOCTOR_SOURCES
   ${PLANT_DOCTOR_DIR}/ui/LcdUi.c
 )
 
+set(SENSOR_DIAGNOSTIC_DIR
+    "${PLANT_DOCTOR_DIR}/examples/sensor_diagnostic")
+set(SENSOR_DIAGNOSTIC_SOURCES
+  ${CMAKE_CURRENT_SOURCE_DIR}/platform/gcc_syscalls.c
+  ${SENSOR_DIAGNOSTIC_DIR}/main.c
+  ${SENSOR_DIAGNOSTIC_DIR}/SensorDiagnostic.c
+  ${SENSOR_DIAGNOSTIC_DIR}/DiagnosticI2c.c
+  ${SENSOR_DIAGNOSTIC_DIR}/DiagnosticSensors.c
+  ${PLANT_DOCTOR_DIR}/NmiHandler.c
+  ${PLANT_DOCTOR_DIR}/codeoption.c
+  ${PLANT_DOCTOR_DIR}/startup_ML63Q25x7.c
+  ${PLANT_DOCTOR_DIR}/system_ML63Q25x7.c
+  ${PLANT_DOCTOR_DIR}/board/Board.c
+  ${PLANT_DOCTOR_DIR}/board/BoardTimer.c
+  ${PLANT_DOCTOR_DIR}/board/LedControl.c
+  ${PLANT_DOCTOR_DIR}/board/PowerControlAdapter.c
+  ${PLANT_DOCTOR_DIR}/board/SwitchControl.c
+  ${PLANT_DOCTOR_DIR}/drivers/Lcd.c
+  ${PLANT_DOCTOR_DIR}/drivers/LcdI2cf0.c
+)
+
 set(VENDOR_SOURCES
   ${COMMON_FILES_DIR}/Driver/irq.c
   ${COMMON_FILES_DIR}/Driver/saAdc0.c
@@ -96,56 +117,15 @@ set(VENDOR_SOURCES
   ${COMMON_FILES_DIR}/Timer/TimeControl.c
 )
 
-add_executable(PlantDoctor ${PLANT_DOCTOR_SOURCES} ${VENDOR_SOURCES})
-set_target_properties(PlantDoctor PROPERTIES SUFFIX ".elf")
-
 # Keep vendor sources unchanged while avoiding warnings about their established
 # declaration style. Warnings remain enabled for Plant Doctor-owned sources.
 set_source_files_properties(${VENDOR_SOURCES} PROPERTIES
   COMPILE_OPTIONS "-Wno-old-style-declaration")
 
-target_include_directories(PlantDoctor PRIVATE
-  ${PLANT_DOCTOR_DIR}
-  ${PLANT_DOCTOR_DIR}/actuator
-  ${PLANT_DOCTOR_DIR}/ai
-  ${PLANT_DOCTOR_DIR}/app
-  ${PLANT_DOCTOR_DIR}/board
-  ${PLANT_DOCTOR_DIR}/config
-  ${PLANT_DOCTOR_DIR}/drivers
-  ${PLANT_DOCTOR_DIR}/inc
-  ${PLANT_DOCTOR_DIR}/sensors
-  ${PLANT_DOCTOR_DIR}/storage
-  ${PLANT_DOCTOR_DIR}/ui
-  ${COMMON_FILES_DIR}/Driver
-  ${COMMON_FILES_DIR}/Power
-  ${COMMON_FILES_DIR}/SoftSpi
-  ${COMMON_FILES_DIR}/Timer
-  ${CMSIS_CORE_INCLUDE}
-)
-
-target_compile_definitions(PlantDoctor PRIVATE
-  ML63Q25x7
-  ML63Q2557
-  $<$<CONFIG:Debug>:DEBUG>
-  $<$<CONFIG:Release>:NDEBUG>
-)
-
 set(CPU_OPTIONS
   -mcpu=cortex-m0plus
   -mthumb
   -fno-signed-char
-)
-
-target_compile_options(PlantDoctor PRIVATE
-  ${CPU_OPTIONS}
-  -ffunction-sections
-  -fdata-sections
-  -Wall
-  -Wextra
-  $<$<CONFIG:Debug>:-O0>
-  $<$<CONFIG:Debug>:-g3>
-  $<$<CONFIG:Debug>:-gdwarf-4>
-  $<$<CONFIG:Release>:-Os>
 )
 
 # The LEXIDE linker file contains the verified ML63Q2557 memory map and code
@@ -159,21 +139,70 @@ string(REGEX REPLACE "(\\.stack \\([^\\r\\n]+\\)) :" "\\1 (COPY) :"
        _linker_script "${_linker_script}")
 file(WRITE "${GCC_LINKER_SCRIPT}" "${_linker_script}")
 
-target_link_options(PlantDoctor PRIVATE
-  ${CPU_OPTIONS}
-  --specs=nano.specs
-  "-T${GCC_LINKER_SCRIPT}"
-  -Wl,--gc-sections
-  -Wl,--print-memory-usage
-  "-Wl,-Map=${CMAKE_CURRENT_BINARY_DIR}/PlantDoctor.map"
-)
-set_property(TARGET PlantDoctor APPEND PROPERTY LINK_DEPENDS "${LEXIDE_LINKER_SCRIPT}")
+function(configure_ml63q2557_firmware target)
+  set_target_properties(${target} PROPERTIES SUFFIX ".elf")
 
-add_custom_command(TARGET PlantDoctor POST_BUILD
-  COMMAND ${CMAKE_OBJCOPY} -O ihex
-          $<TARGET_FILE:PlantDoctor> "${CMAKE_CURRENT_BINARY_DIR}/PlantDoctor.hex"
-  COMMAND ${CMAKE_OBJCOPY} -O binary
-          $<TARGET_FILE:PlantDoctor> "${CMAKE_CURRENT_BINARY_DIR}/PlantDoctor.bin"
-  COMMAND ${CMAKE_SIZE} $<TARGET_FILE:PlantDoctor>
-  COMMENT "Generating PlantDoctor.hex and PlantDoctor.bin"
-)
+  target_include_directories(${target} PRIVATE
+    ${PLANT_DOCTOR_DIR}
+    ${PLANT_DOCTOR_DIR}/actuator
+    ${PLANT_DOCTOR_DIR}/ai
+    ${PLANT_DOCTOR_DIR}/app
+    ${PLANT_DOCTOR_DIR}/board
+    ${PLANT_DOCTOR_DIR}/config
+    ${PLANT_DOCTOR_DIR}/drivers
+    ${PLANT_DOCTOR_DIR}/inc
+    ${PLANT_DOCTOR_DIR}/sensors
+    ${PLANT_DOCTOR_DIR}/storage
+    ${PLANT_DOCTOR_DIR}/ui
+    ${SENSOR_DIAGNOSTIC_DIR}
+    ${COMMON_FILES_DIR}/Driver
+    ${COMMON_FILES_DIR}/Power
+    ${COMMON_FILES_DIR}/SoftSpi
+    ${COMMON_FILES_DIR}/Timer
+    ${CMSIS_CORE_INCLUDE}
+  )
+
+  target_compile_definitions(${target} PRIVATE
+    ML63Q25x7
+    ML63Q2557
+    $<$<CONFIG:Debug>:DEBUG>
+    $<$<CONFIG:Release>:NDEBUG>
+  )
+
+  target_compile_options(${target} PRIVATE
+    ${CPU_OPTIONS}
+    -ffunction-sections
+    -fdata-sections
+    -Wall
+    -Wextra
+    $<$<CONFIG:Debug>:-O0>
+    $<$<CONFIG:Debug>:-g3>
+    $<$<CONFIG:Debug>:-gdwarf-4>
+    $<$<CONFIG:Release>:-Os>
+  )
+
+  target_link_options(${target} PRIVATE
+    ${CPU_OPTIONS}
+    --specs=nano.specs
+    "-T${GCC_LINKER_SCRIPT}"
+    -Wl,--gc-sections
+    -Wl,--print-memory-usage
+    "-Wl,-Map=${CMAKE_CURRENT_BINARY_DIR}/${target}.map"
+  )
+  set_property(TARGET ${target} APPEND PROPERTY LINK_DEPENDS "${LEXIDE_LINKER_SCRIPT}")
+
+  add_custom_command(TARGET ${target} POST_BUILD
+    COMMAND ${CMAKE_OBJCOPY} -O ihex
+            $<TARGET_FILE:${target}> "${CMAKE_CURRENT_BINARY_DIR}/${target}.hex"
+    COMMAND ${CMAKE_OBJCOPY} -O binary
+            $<TARGET_FILE:${target}> "${CMAKE_CURRENT_BINARY_DIR}/${target}.bin"
+    COMMAND ${CMAKE_SIZE} $<TARGET_FILE:${target}>
+    COMMENT "Generating ${target}.hex and ${target}.bin"
+  )
+endfunction()
+
+add_executable(PlantDoctor ${PLANT_DOCTOR_SOURCES} ${VENDOR_SOURCES})
+configure_ml63q2557_firmware(PlantDoctor)
+
+add_executable(SensorDiagnostic ${SENSOR_DIAGNOSTIC_SOURCES} ${VENDOR_SOURCES})
+configure_ml63q2557_firmware(SensorDiagnostic)

@@ -20,8 +20,8 @@
 #include "smpl_common.h"
 
 #define LCD_RESET_DISABLE              (1UL << 2U)
-#define LCD_I2C_MODE                   (I2F_MOD_FST)
-#define LCD_I2C_RATE                   (0x0FU)
+#define LCD_I2C_MODE                   (I2F_MOD_STD)
+#define LCD_I2C_RATE                   (0x3CU)
 #define LCD_CONTROL_COMMAND            (0x00U)
 #define LCD_CONTROL_DATA               (0x40U)
 #define LCD_SLAVE_ADDRESS              (0x7CU)
@@ -176,7 +176,16 @@ LCD_STATUS Lcd_Init(void)
 	status = Lcd_Delay(LCD_DELAY_RESET);
 	for (index = 0U; (index < LCD_INIT_COMMAND_COUNT) && (status == LCD_STATUS_OK); ++index)
 	{
-		LCD_DELAY_KIND delayKind = (index == 5U) ? LCD_DELAY_POWER_STABLE : LCD_DELAY_NORMAL;
+		LCD_DELAY_KIND delayKind = LCD_DELAY_NORMAL;
+
+		if (index == 5U)
+		{
+			delayKind = LCD_DELAY_POWER_STABLE;
+		}
+		else if (s_initCommands[index] == 0x01U)
+		{
+			delayKind = LCD_DELAY_CLEAR;
+		}
 		status = Lcd_WriteCommand(s_initCommands[index], delayKind);
 	}
 	return status;

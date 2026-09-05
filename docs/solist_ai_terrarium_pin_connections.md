@@ -7,10 +7,9 @@
 - 使用ボード：Solist-AI™搭載評価ボード `DT-EBML63Q2557`
 - 付属MEMS加速度センサ：**未使用**
 - 14ピンIDCハーネス：**未使用**
-- Grove / Gravity変換コネクタ：**未使用**
-- I2C HUB：**未使用**
-- 各センサはジャンパ線で評価ボードの指定ピンへ直接接続する
-- I2Cセンサ3台は、SCL / SDA / VCC / GNDを並列接続する
+- I2C HUB V1.0：**使用**
+- CN3とI2C HUB入力をジャンパ線で接続する
+- I2Cセンサ3台はGravityケーブルでHUBへ接続し、SCL / SDA / VCC / GNDを並列接続する
 - ポンプは評価ボードから直接給電せず、外部12V電源から駆動する
 
 ---
@@ -141,24 +140,25 @@ SEN0228
 
 ## 3.4 I2C全体
 
-3台のI2Cセンサを同じ4本へ並列接続する。
+CN3をI2C HUBの入力へ接続し、3台のI2CセンサをHUBの各ポートへ接続する。
+HUBは受動分岐のため、電気的には同じ4本への並列接続となる。
 
 ```text
-CN3-5  3.3V ──┬─ SEN0206 VCC
-               ├─ SEN0385 VCC
-               └─ SEN0228 VCC
+CN3-5  3.3V ── HUB VCC ─┬─ SEN0206 VCC
+                         ├─ SEN0385 VCC
+                         └─ SEN0228 VCC
 
-CN3-2  GND  ───┬─ SEN0206 GND
-                ├─ SEN0385 GND
-                └─ SEN0228 GND
+CN3-2  GND  ─── HUB GND ─┬─ SEN0206 GND
+                          ├─ SEN0385 GND
+                          └─ SEN0228 GND
 
-CN3-1  SCL  ───┬─ SEN0206 SCL
-                ├─ SEN0385 SCL
-                └─ SEN0228 SCL
+CN3-1  SCL  ─── HUB SCL ─┬─ SEN0206 SCL
+                          ├─ SEN0385 SCL
+                          └─ SEN0228 SCL
 
-CN3-3  SDA  ───┬─ SEN0206 SDA
-                ├─ SEN0385 SDA
-                └─ SEN0228 SDA
+CN3-3  SDA  ─── HUB SDA ─┬─ SEN0206 SDA
+                          ├─ SEN0385 SDA
+                          └─ SEN0228 SDA
 ```
 
 ### 注意
@@ -419,21 +419,21 @@ DFR0457 GND
                             DT-EBML63Q2557
                      ┌─────────────────────────┐
                      │                         │
-     CN3-5 3.3V ─────┼──┬─ SEN0206 VCC       │
-                     │  ├─ SEN0385 VCC       │
-                     │  └─ SEN0228 VCC       │
+     CN3-5 3.3V ─────┼── I2C HUB ┬─ SEN0206 VCC
+                     │           ├─ SEN0385 VCC
+                     │           └─ SEN0228 VCC
                      │                         │
-     CN3-2 GND ──────┼──┬─ SEN0206 GND       │
-                     │  ├─ SEN0385 GND       │
-                     │  └─ SEN0228 GND       │
+     CN3-2 GND ──────┼── I2C HUB ┬─ SEN0206 GND
+                     │           ├─ SEN0385 GND
+                     │           └─ SEN0228 GND
                      │                         │
-     CN3-1 SCL ──────┼──┬─ SEN0206 SCL       │
-                     │  ├─ SEN0385 SCL       │
-                     │  └─ SEN0228 SCL       │
+     CN3-1 SCL ──────┼── I2C HUB ┬─ SEN0206 SCL
+                     │           ├─ SEN0385 SCL
+                     │           └─ SEN0228 SCL
                      │                         │
-     CN3-3 SDA ──────┼──┬─ SEN0206 SDA       │
-                     │  ├─ SEN0385 SDA       │
-                     │  └─ SEN0228 SDA       │
+     CN3-3 SDA ──────┼── I2C HUB ┬─ SEN0206 SDA
+                     │           ├─ SEN0385 SDA
+                     │           └─ SEN0228 SDA
                      │                         │
      CN6-1 5V ───────┼──┬─ SEN0193 VCC       │
                      │  └─ SEN0204 VCC       │

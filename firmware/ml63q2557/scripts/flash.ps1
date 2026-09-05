@@ -1,11 +1,14 @@
 param(
     [ValidateSet("debug", "release")]
-    [string]$Preset = "debug"
+    [string]$Preset = "debug",
+
+    [ValidateSet("PlantDoctor", "SensorDiagnostic")]
+    [string]$Target = "PlantDoctor"
 )
 
 $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$elfPath = Join-Path $projectRoot "build/$Preset/PlantDoctor.elf"
+$elfPath = Join-Path $projectRoot "build/$Preset/$Target.elf"
 
 if (-not (Test-Path -LiteralPath $elfPath)) {
     throw "Firmware was not found: $elfPath. Build the $Preset preset first."

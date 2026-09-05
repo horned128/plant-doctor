@@ -23,7 +23,7 @@ set(COMMON_FILES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/CommonFiles")
 set(CMSIS_CORE_INCLUDE "" CACHE PATH "Directory containing core_cm0plus.h")
 if(NOT CMSIS_CORE_INCLUDE)
   set(_cmsis_candidates
-      "${CMAKE_CURRENT_SOURCE_DIR}/external/CMSIS/CMSIS/Core/Include")
+      "${CMAKE_CURRENT_SOURCE_DIR}/../../external/CMSIS/CMSIS/Core/Include")
 
   if(DEFINED ENV{CMSIS_ROOT})
     list(APPEND _cmsis_candidates "$ENV{CMSIS_ROOT}/CMSIS/Core/Include")

@@ -2,7 +2,8 @@
 
 ## VS Code／ARM GCC移植検証（2026-09-04）
 
-`solist_ai_project_template`の構成を参考に追加したルート`CMakeLists.txt`を、
+`solist_ai_project_template`の構成を参考に追加した
+`firmware/ml63q2557/CMakeLists.txt`を、
 次の環境で検証しました。
 
 - VS Code + CMake Tools
@@ -31,7 +32,8 @@ ELFと生成物について次を確認しました。
   `ml63q25x7.cfg`をエラーなく読み込む
 
 実機フラッシュはこの移植作業では実行していません。既存の実機確認済み
-LEXIDE成果物を残したまま、VS Code成果物を`build/`以下へ分離しています。
+LEXIDE成果物を残したまま、VS Code成果物を
+`firmware/ml63q2557/build/`以下へ分離しています。
 
 ## 検証環境
 

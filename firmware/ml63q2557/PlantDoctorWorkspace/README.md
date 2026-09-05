@@ -1,7 +1,7 @@
 # Plant Doctor ワークスペース
 
 `PlantDoctor/`にDT-EBML63Q2557（ML63Q2557）用のアプリケーションコードが
-あります。標準のVS Code／CMakeビルドはリポジトリルートの`CMakeLists.txt`から
+あります。標準のVS Code／CMakeビルドは`firmware/ml63q2557/CMakeLists.txt`から
 このディレクトリと`../CommonFiles`を参照します。通常はリポジトリルートを
 VS Codeで開いてください。
 
@@ -17,4 +17,4 @@ PlantDoctorWorkspace/
   PlantDoctor/
 ```
 
-VS Codeの手順は[VS Code開発環境](../docs/VSCODE_SETUP.md)を参照してください。
+VS Codeの手順は[VS Code開発環境](../../../docs/VSCODE_SETUP.md)を参照してください。

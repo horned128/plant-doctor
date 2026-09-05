@@ -225,10 +225,26 @@ BOARD TEST
 
 # 12. 作成する構成
 
-次の構造を目標とする。
+ML63Q2557固有のソース、ツールチェーン定義、ビルドスクリプトは
+`firmware/ml63q2557/`へ集約する。将来、別のマイコン向けファームウェアを
+追加する場合は、`firmware/`直下に同様のディレクトリを追加する。
 
-PlantDoctorWorkspace/
-└─ PlantDoctor/
+```text
+firmware/
+└─ ml63q2557/
+   ├─ CommonFiles/                 ベンダー提供コード
+   ├─ CMakeLists.txt
+   ├─ CMakePresets.json
+   ├─ cmake/                       ARM GNU Toolchain定義
+   ├─ platform/                    GCC向け補助コード
+   ├─ scripts/                     ビルド・書き込み・セットアップ
+   └─ PlantDoctorWorkspace/
+      └─ PlantDoctor/
+```
+
+`PlantDoctor/`配下の構造は次のとおりとする。
+
+PlantDoctor/
    ├─ app/
    │  ├─ App.c
    │  ├─ App.h
@@ -278,6 +294,7 @@ PlantDoctorWorkspace/
    ├─ .cproject
    └─ .settings/
 
+README以外の設計、接続、検証ドキュメントはリポジトリルートの`docs/`へ集約する。
 ディレクトリ構成はLEXIDE-Ωの制約に合わせて変更してよいが、アプリ、ボード依存、センサ、AI、UI、アクチュエータを分離すること。
 
 # 13. ベンダーコードの扱い

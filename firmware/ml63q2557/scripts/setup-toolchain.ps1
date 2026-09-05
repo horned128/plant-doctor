@@ -36,4 +36,4 @@ foreach ($path in $requiredPaths) {
 }
 
 & $gccPath --version | Select-Object -First 1
-Write-Host "Toolchain setup is complete. Run scripts/build.ps1 next."
+Write-Host "Toolchain setup is complete. Run build.ps1 next."

@@ -10,7 +10,7 @@
         "-ExecutionPolicy",
         "Bypass",
         "-File",
-        "${workspaceFolder}/scripts/build.ps1",
+        "${workspaceFolder}/firmware/ml63q2557/scripts/build.ps1",
         "-Preset",
         "debug"
       ],
@@ -29,7 +29,7 @@
         "-ExecutionPolicy",
         "Bypass",
         "-File",
-        "${workspaceFolder}/scripts/build.ps1",
+        "${workspaceFolder}/firmware/ml63q2557/scripts/build.ps1",
         "-Preset",
         "release"
       ],
@@ -45,7 +45,7 @@
         "-ExecutionPolicy",
         "Bypass",
         "-File",
-        "${workspaceFolder}/scripts/flash.ps1",
+        "${workspaceFolder}/firmware/ml63q2557/scripts/flash.ps1",
         "-Preset",
         "debug"
       ],

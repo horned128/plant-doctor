@@ -33,12 +33,12 @@ jobs:
 
       - name: Configure
         run: >-
-          cmake -S . -B build/${{ matrix.build_type }} -G Ninja
+          cmake -S firmware/ml63q2557 -B firmware/ml63q2557/build/${{ matrix.build_type }} -G Ninja
           -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
-          -DCMAKE_TOOLCHAIN_FILE=cmake/arm-none-eabi-toolchain.cmake
+          -DCMAKE_TOOLCHAIN_FILE=firmware/ml63q2557/cmake/arm-none-eabi-toolchain.cmake
 
       - name: Build
-        run: cmake --build build/${{ matrix.build_type }} --parallel
+        run: cmake --build firmware/ml63q2557/build/${{ matrix.build_type }} --parallel
 
       - name: Report size
-        run: arm-none-eabi-size build/${{ matrix.build_type }}/PlantDoctor.elf
+        run: arm-none-eabi-size firmware/ml63q2557/build/${{ matrix.build_type }}/PlantDoctor.elf

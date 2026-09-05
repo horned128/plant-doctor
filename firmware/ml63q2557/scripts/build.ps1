@@ -23,7 +23,7 @@ function Find-Executable {
         }
     }
 
-    throw "$Name was not found. Run scripts/setup-toolchain.ps1 first."
+    throw "$Name was not found. Run firmware/ml63q2557/scripts/setup-toolchain.ps1 first."
 }
 
 $cmake = Find-Executable "cmake.exe" @(

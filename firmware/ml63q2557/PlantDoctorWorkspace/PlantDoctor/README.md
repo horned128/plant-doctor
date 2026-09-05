@@ -54,7 +54,7 @@ ui/LcdUi
 ## VS Codeでのビルドとデバッグ
 
 標準の開発手順はリポジトリルートの
-[`docs/VSCODE_SETUP.md`](../../docs/VSCODE_SETUP.md)にまとめています。
+[`docs/VSCODE_SETUP.md`](../../../../docs/VSCODE_SETUP.md)にまとめています。
 VS Codeでリポジトリルートを開き、`Ctrl+Shift+B`でDebugビルド、`F5`で
 MCU-Linkへの書き込みとデバッグを実行できます。
 
@@ -123,4 +123,4 @@ P7.3のSCLF0、P7.4のSDAF0、アドレス`0x7C`からのI2C ACK、状態機械�
 通常、LCD初期化、I2C配線、5 V電源のいずれかが失敗しています。
 
 初回実機診断の内容と、修正版でもエラー状態になる場合にデバッガで確認する値は、
-[`docs/HARDWARE_DIAGNOSTICS.md`](docs/HARDWARE_DIAGNOSTICS.md)を参照してください。
+[`docs/HARDWARE_DIAGNOSTICS.md`](../../../../docs/HARDWARE_DIAGNOSTICS.md)を参照してください。

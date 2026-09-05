@@ -1,19 +1,33 @@
-#include "PlantLog.h"
+/** =================================================================*
+ * @file   PlantLog.c
+ * @brief  植物ログ保存
+ * ================================================================= */
+#include "PlantLog.h"                                       /* PlantLogのAPIと型定義 */
 
-bool PlantLog_Init(void)
-{
-	/* FRAM allocation and record format are intentionally deferred. */
-	return true;
+/** =================================================================*
+ * @brief  PlantLog_Init処理
+ * @return 実行結果または取得値
+ * ================================================================= */
+bool PlantLog_Init(void) {
+    /* FRAM領域とレコード形式の決定は保留している。 */
+    return true;
 }
 
-bool PlantLog_Append(const uint8_t *data, uint16_t size)
-{
-	(void)data;
-	(void)size;
-	return false;
+/** =================================================================*
+ * @brief  PlantLog_Append処理
+ * @param[in] data 引数
+ * @param[in] size 引数
+ * @return 実行結果または取得値
+ * ================================================================= */
+bool PlantLog_Append(const uint8_t *data, uint16_t size) {
+    (void)data;
+    (void)size;
+    return false;
 }
 
-void PlantLog_Process10Ms(void)
-{
-	/* Future asynchronous storage service boundary. */
+/** =================================================================*
+ * @brief  PlantLog_Process10Ms処理
+ * ================================================================= */
+void PlantLog_Process10Ms(void) {
+    /* 将来の非同期ストレージサービスとの境界とする。 */
 }

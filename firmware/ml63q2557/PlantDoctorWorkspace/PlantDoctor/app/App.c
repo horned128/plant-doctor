@@ -1,55 +1,56 @@
-#include "App.h"
+/** =================================================================*
+ * @file   App.c
+ * @brief  アプリケーション処理
+ * ================================================================= */
+#include "App.h"                                            /* AppのAPIと型定義 */
+#include "AppStateMachine.h"                                /* AppStateMachineのAPIと型定義 */
+#include "Board.h"                                          /* BoardのAPIと型定義 */
+#include "PlantAi.h"                                        /* PlantAiのAPIと型定義 */
+#include "PlantLog.h"                                       /* PlantLogのAPIと型定義 */
+#include "PumpControl.h"                                    /* PumpControlのAPIと型定義 */
+#include "SensorManager.h"                                  /* SensorManagerのAPIと型定義 */
 
-#include "AppStateMachine.h"
-#include "Board.h"
-#include "PlantAi.h"
-#include "PlantLog.h"
-#include "PumpControl.h"
-#include "SensorManager.h"
+/** =================================================================*
+ * @brief  App_Init処理
+ * ================================================================= */
+void App_Init(void) {
+    PLANT_DOCTOR_ERROR error;
 
-void App_Init(void)
-{
-	PLANT_DOCTOR_ERROR error;
+    AppStateMachine_Init();
+    error = Board_Init();
+    if (error != PLANT_DOCTOR_ERROR_NONE) {
+        AppStateMachine_EnterError(error);
+        return;
+    }
 
-	AppStateMachine_Init();
-	error = Board_Init();
-	if (error != PLANT_DOCTOR_ERROR_NONE)
-	{
-		AppStateMachine_EnterError(error);
-		return;
-	}
-
-	if (!SensorManager_Init() || !PlantAi_Init() || !PumpControl_Init())
-	{
-		AppStateMachine_EnterError(PLANT_DOCTOR_ERROR_SENSOR_INTERFACE);
-		return;
-	}
-	if (!PlantLog_Init())
-	{
-		AppStateMachine_EnterError(PLANT_DOCTOR_ERROR_STORAGE_INTERFACE);
-	}
+    if (!SensorManager_Init() || !PlantAi_Init() || !PumpControl_Init()) {
+        AppStateMachine_EnterError(PLANT_DOCTOR_ERROR_SENSOR_INTERFACE);
+        return;
+    }
+    if (!PlantLog_Init()) {
+        AppStateMachine_EnterError(PLANT_DOCTOR_ERROR_STORAGE_INTERFACE);
+    }
 }
 
-void App_RunOnce(void)
-{
-	Board_ServiceWatchdog();
+/** =================================================================*
+ * @brief  App_RunOnce処理
+ * ================================================================= */
+void App_RunOnce(void) {
+    Board_ServiceWatchdog();
 
-	if (Board_TakeTickOverflow())
-	{
-		AppStateMachine_EnterError(PLANT_DOCTOR_ERROR_TICK_OVERFLOW);
-	}
+    if (Board_TakeTickOverflow()) {
+        AppStateMachine_EnterError(PLANT_DOCTOR_ERROR_TICK_OVERFLOW);
+    }
 
-	while (Board_Take10MsTick())
-	{
-		if (!Board_Process10Ms())
-		{
-			AppStateMachine_EnterError(PLANT_DOCTOR_ERROR_SWITCH);
-		}
-		SensorManager_Process10Ms();
-		PlantAi_Process10Ms();
-		PlantLog_Process10Ms();
-		AppStateMachine_Tick10Ms();
-	}
+    while (Board_Take10MsTick()) {
+        if (!Board_Process10Ms()) {
+            AppStateMachine_EnterError(PLANT_DOCTOR_ERROR_SWITCH);
+        }
+        SensorManager_Process10Ms();
+        PlantAi_Process10Ms();
+        PlantLog_Process10Ms();
+        AppStateMachine_Tick10Ms();
+    }
 
-	AppStateMachine_Process();
+    AppStateMachine_Process();
 }

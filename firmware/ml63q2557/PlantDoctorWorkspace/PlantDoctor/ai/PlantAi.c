@@ -1,21 +1,32 @@
-#include "PlantAi.h"
+/** =================================================================*
+ * @file   PlantAi.c
+ * @brief  植物状態AI
+ * ================================================================= */
+#include "PlantAi.h"                                        /* PlantAiのAPIと型定義 */
+#include "PlantFeature.h"                                   /* PlantFeatureのAPIと型定義 */
 
-#include "PlantFeature.h"
+static PLANT_FEATURE_VECTOR s_feature;                      /**< モジュール内部状態 */
 
-static PLANT_FEATURE_VECTOR s_feature;
-
-bool PlantAi_Init(void)
-{
-	PlantFeature_Reset(&s_feature);
-	return true;
+/** =================================================================*
+ * @brief  PlantAi_Init処理
+ * @return 実行結果または取得値
+ * ================================================================= */
+bool PlantAi_Init(void) {
+    PlantFeature_Reset(&s_feature);
+    return true;
 }
 
-void PlantAi_Process10Ms(void)
-{
-	/* MlTask, Preprocess and AnomalyDetector will be connected here later. */
+/** =================================================================*
+ * @brief  PlantAi_Process10Ms処理
+ * ================================================================= */
+void PlantAi_Process10Ms(void) {
+    /* MlTask、前処理、異常検出器は今後接続する。 */
 }
 
-bool PlantAi_IsAnomaly(void)
-{
-	return false;
+/** =================================================================*
+ * @brief  PlantAi_IsAnomaly処理
+ * @return 実行結果または取得値
+ * ================================================================= */
+bool PlantAi_IsAnomaly(void) {
+    return false;
 }

@@ -1,11 +1,17 @@
-#include "SensorDiagnostic.h"
+/** =================================================================*
+ * @file   main.c
+ * @brief  ファームウェアエントリポイント
+ * ================================================================= */
+#include "SensorDiagnostic.h"                               /* SensorDiagnosticのAPIと型定義 */
 
-int main(void)
-{
-	SensorDiagnostic_Init();
+/** =================================================================*
+ * @brief  main処理
+ * @return 実行結果または取得値
+ * ================================================================= */
+int main(void) {
+    SensorDiagnostic_Init();
 
-	while (1)
-	{
-		SensorDiagnostic_RunOnce();
-	}
+    while (1) {
+        SensorDiagnostic_RunOnce();
+    }
 }

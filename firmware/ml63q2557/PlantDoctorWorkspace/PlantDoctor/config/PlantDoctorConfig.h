@@ -1,12 +1,16 @@
+/** =================================================================*
+ * @file   PlantDoctorConfig.h
+ * @brief  アプリケーション設定
+ * ================================================================= */
 #ifndef PLANT_DOCTOR_CONFIG_H
 #define PLANT_DOCTOR_CONFIG_H
 
-#define PLANT_DOCTOR_TICK_MS                  (10U)
-#define PLANT_DOCTOR_LED_BLINK_TICKS          (100U)
-#define PLANT_DOCTOR_ERROR_BLINK_TICKS        (25U)
-#define PLANT_DOCTOR_SELF_TEST_TICKS          (50U)
-#define PLANT_DOCTOR_SWITCH_DEBOUNCE_POLLS    (2U)
-#define PLANT_DOCTOR_LCD_TIMEOUT_LOOPS        (4800000UL)
+#define PLANT_DOCTOR_TICK_MS               (10U)
+#define PLANT_DOCTOR_LED_BLINK_TICKS       (100U)
+#define PLANT_DOCTOR_ERROR_BLINK_TICKS     (25U)
+#define PLANT_DOCTOR_SELF_TEST_TICKS       (50U)
+#define PLANT_DOCTOR_SWITCH_DEBOUNCE_POLLS (2U)
+#define PLANT_DOCTOR_LCD_TIMEOUT_LOOPS     (4800000UL)
 #define PLANT_DOCTOR_TIMER_START_TIMEOUT_LOOPS (480000UL)
 
 #endif /* PLANT_DOCTOR_CONFIG_H */

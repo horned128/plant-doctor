@@ -1,15 +1,18 @@
+/** =================================================================*
+ * @file   LcdUi.h
+ * @brief  LCDユーザーインターフェースAPI
+ * ================================================================= */
 #ifndef LCD_UI_H
 #define LCD_UI_H
 
-#include <stdbool.h>
-#include <stdint.h>
+#include <stdbool.h>                                        /* 標準Cの真偽値型 */
+#include <stdint.h>                                         /* 標準Cの固定幅整数型 */
+#include "PlantDoctorStatus.h"                              /* PlantDoctorStatusのAPIと型定義 */
 
-#include "PlantDoctorStatus.h"
-
-bool LcdUi_Init(void);
-bool LcdUi_IsReady(void);
-bool LcdUi_ShowBoardTest(void);
-bool LcdUi_ShowSwitch(uint8_t pressedMask);
-bool LcdUi_ShowError(PLANT_DOCTOR_ERROR error);
+bool LcdUi_Init(void);                                      /* LcdUi_InitのAPI */
+bool LcdUi_IsReady(void);                                   /* LcdUi_IsReadyのAPI */
+bool LcdUi_ShowBoardTest(void);                             /* LcdUi_ShowBoardTestのAPI */
+bool LcdUi_ShowSwitch(uint8_t pressedMask);                 /* LcdUi_ShowSwitchのAPI */
+bool LcdUi_ShowError(PLANT_DOCTOR_ERROR error);             /* LcdUi_ShowErrorのAPI */
 
 #endif /* LCD_UI_H */

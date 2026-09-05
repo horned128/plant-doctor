@@ -1,13 +1,24 @@
-#include "LeafTemperatureSensor.h"
+/** =================================================================*
+ * @file   LeafTemperatureSensor.c
+ * @brief  葉温センサー
+ * ================================================================= */
+#include "LeafTemperatureSensor.h"                          /* LeafTemperatureSensorのAPIと型定義 */
 
-bool LeafTemperatureSensor_Init(void)
-{
-	/* The infrared sensor and bus assignment are not selected yet. */
-	return true;
+/** =================================================================*
+ * @brief  LeafTemperatureSensor_Init処理
+ * @return 実行結果または取得値
+ * ================================================================= */
+bool LeafTemperatureSensor_Init(void) {
+    /* 赤外線センサーとバス割り当ては未選定である。 */
+    return true;
 }
 
-bool LeafTemperatureSensor_Read(int16_t *temperatureCentiC)
-{
-	(void)temperatureCentiC;
-	return false;
+/** =================================================================*
+ * @brief  LeafTemperatureSensor_Read処理
+ * @param[out] temperatureCentiC 引数
+ * @return 実行結果または取得値
+ * ================================================================= */
+bool LeafTemperatureSensor_Read(int16_t *temperatureCentiC) {
+    (void)temperatureCentiC;
+    return false;
 }

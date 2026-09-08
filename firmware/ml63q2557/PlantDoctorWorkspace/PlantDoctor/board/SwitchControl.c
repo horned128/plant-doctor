@@ -28,7 +28,6 @@ static uint8_t SwitchControl_ReadRaw(void) {
 
 /** =================================================================*
  * @brief  SwitchControl_UpdateState処理
- * @return 実行結果または取得値
  * ================================================================= */
 static void SwitchControl_UpdateState(void) {
     uint8_t stableValue = InputGetSystemInputValue(INPUT_INDEX_DIP_PSH);
@@ -51,11 +50,8 @@ bool SwitchControl_Init(void) {
  * @return 実行結果または取得値
  * ================================================================= */
 bool SwitchControl_Process10Ms(void) {
-    INPUT_POLLING_RESULT result = InputPolling(
-        INPUT_INDEX_DIP_PSH,
-        (uint8_t)PLANT_DOCTOR_SWITCH_DEBOUNCE_POLLS,
-        SwitchControl_ReadRaw,
-        SwitchControl_UpdateState);
+    INPUT_POLLING_RESULT result = InputPolling(INPUT_INDEX_DIP_PSH,
+        (uint8_t)PLANT_DOCTOR_SWITCH_DEBOUNCE_POLLS, SwitchControl_ReadRaw, SwitchControl_UpdateState);
 
     return (result != INPUT_POLLING_RESULT_INVALID_ARGUMENT);
 }

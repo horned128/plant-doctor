@@ -71,32 +71,13 @@ set(PLANT_DOCTOR_SOURCES
   ${PLANT_DOCTOR_DIR}/drivers/Lcd.c
   ${PLANT_DOCTOR_DIR}/drivers/LcdI2cf0.c
   ${PLANT_DOCTOR_DIR}/sensors/EnvironmentSensor.c
+  ${PLANT_DOCTOR_DIR}/sensors/I2cBus.c
   ${PLANT_DOCTOR_DIR}/sensors/LeafTemperatureSensor.c
   ${PLANT_DOCTOR_DIR}/sensors/SensorManager.c
   ${PLANT_DOCTOR_DIR}/sensors/SoilMoistureSensor.c
+  ${PLANT_DOCTOR_DIR}/sensors/TankLevelSensor.c
   ${PLANT_DOCTOR_DIR}/storage/PlantLog.c
   ${PLANT_DOCTOR_DIR}/ui/LcdUi.c
-)
-
-set(SENSOR_DIAGNOSTIC_DIR
-    "${PLANT_DOCTOR_DIR}/examples/sensor_diagnostic")
-set(SENSOR_DIAGNOSTIC_SOURCES
-  ${CMAKE_CURRENT_SOURCE_DIR}/platform/gcc_syscalls.c
-  ${SENSOR_DIAGNOSTIC_DIR}/main.c
-  ${SENSOR_DIAGNOSTIC_DIR}/SensorDiagnostic.c
-  ${SENSOR_DIAGNOSTIC_DIR}/DiagnosticI2c.c
-  ${SENSOR_DIAGNOSTIC_DIR}/DiagnosticSensors.c
-  ${PLANT_DOCTOR_DIR}/NmiHandler.c
-  ${PLANT_DOCTOR_DIR}/codeoption.c
-  ${PLANT_DOCTOR_DIR}/startup_ML63Q25x7.c
-  ${PLANT_DOCTOR_DIR}/system_ML63Q25x7.c
-  ${PLANT_DOCTOR_DIR}/board/Board.c
-  ${PLANT_DOCTOR_DIR}/board/BoardTimer.c
-  ${PLANT_DOCTOR_DIR}/board/LedControl.c
-  ${PLANT_DOCTOR_DIR}/board/PowerControlAdapter.c
-  ${PLANT_DOCTOR_DIR}/board/SwitchControl.c
-  ${PLANT_DOCTOR_DIR}/drivers/Lcd.c
-  ${PLANT_DOCTOR_DIR}/drivers/LcdI2cf0.c
 )
 
 set(VENDOR_SOURCES
@@ -154,7 +135,6 @@ function(configure_ml63q2557_firmware target)
     ${PLANT_DOCTOR_DIR}/sensors
     ${PLANT_DOCTOR_DIR}/storage
     ${PLANT_DOCTOR_DIR}/ui
-    ${SENSOR_DIAGNOSTIC_DIR}
     ${COMMON_FILES_DIR}/Driver
     ${COMMON_FILES_DIR}/Power
     ${COMMON_FILES_DIR}/SoftSpi
@@ -203,6 +183,3 @@ endfunction()
 
 add_executable(PlantDoctor ${PLANT_DOCTOR_SOURCES} ${VENDOR_SOURCES})
 configure_ml63q2557_firmware(PlantDoctor)
-
-add_executable(SensorDiagnostic ${SENSOR_DIAGNOSTIC_SOURCES} ${VENDOR_SOURCES})
-configure_ml63q2557_firmware(SensorDiagnostic)

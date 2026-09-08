@@ -60,13 +60,16 @@ static bool LcdI2cf0_Stop(void)
 
 static LCD_I2C_STATUS LcdI2cf0_WaitByteComplete(void)
 {
+	bool nackDetected;
+
 	if (!LcdI2cf0_WaitForMask(LCD_I2C_COMPLETE_MASK, true))
 	{
 		return LCD_I2C_STATUS_TRANSFER_TIMEOUT;
 	}
 
+	nackDetected = get_bit(I2CF0->I2F0SR, LCD_I2C_NACK_MASK) != LCD_I2C_ACK;
 	clear_bit(I2CF0->I2F0SR, LCD_I2C_CLEAR_MASK);
-	if (get_bit(I2CF0->I2F0SR, LCD_I2C_NACK_MASK) != LCD_I2C_ACK)
+	if (nackDetected)
 	{
 		return LCD_I2C_STATUS_NACK;
 	}

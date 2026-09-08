@@ -13,7 +13,13 @@ typedef struct {
     int16_t leafTemperatureCentiC;
     int16_t airTemperatureCentiC;
     uint16_t relativeHumidityCentiPercent;
+    uint32_t illuminanceCentiLux;
     uint16_t illuminanceRaw;
+    bool soilMoistureValid;
+    bool leafTemperatureValid;
+    bool airTemperatureValid;
+    bool illuminanceValid;
+    bool tankLiquidDetected;
     bool valid;
 } PLANT_SENSOR_SNAPSHOT;
 

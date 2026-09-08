@@ -11,7 +11,6 @@ firmware/ml63q2557/PlantDoctorWorkspace/PlantDoctor/ai/
 firmware/ml63q2557/PlantDoctorWorkspace/PlantDoctor/app/
 firmware/ml63q2557/PlantDoctorWorkspace/PlantDoctor/board/
 firmware/ml63q2557/PlantDoctorWorkspace/PlantDoctor/config/
-firmware/ml63q2557/PlantDoctorWorkspace/PlantDoctor/examples/
 firmware/ml63q2557/PlantDoctorWorkspace/PlantDoctor/inc/
 firmware/ml63q2557/PlantDoctorWorkspace/PlantDoctor/sensors/
 firmware/ml63q2557/PlantDoctorWorkspace/PlantDoctor/src/
@@ -22,7 +21,7 @@ firmware/ml63q2557/PlantDoctorWorkspace/PlantDoctor/ui/
 ## 適用対象と除外
 
 この規約は、ユーザーが作成・保守するアプリケーション、ボード抽象化、センサー、
-アクチュエータ、UI、診断サンプルなどのプログラムに適用します。
+アクチュエータ、UI、センサーなどのプログラムに適用します。
 
 次のファイルはユーザーコードと混在していても適用対象外です。提供元の書式と内容を
 維持し、必要な場合はラッパーまたはユーザーソース側で利用します。
@@ -33,8 +32,7 @@ firmware/ml63q2557/PlantDoctorWorkspace/PlantDoctor/ui/
 - ビルドディレクトリ、オブジェクト、実行形式などの生成物
 
 ユーザー作成か提供元由来か判断できないファイルは、由来を確認するまで変更しません。
-現在のツリーでは`examples/sensor_diagnostic/`をプロジェクト保守の診断プログラムとして
-適用対象に含め、`drivers/`、プロジェクト直下の起動・SFR・リンカ関連ファイルは除外します。
+現在のツリーでは`drivers/`、プロジェクト直下の起動・SFR・リンカ関連ファイルは除外します。
 
 ## 基本方針
 

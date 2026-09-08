@@ -9,26 +9,82 @@
 #include "LedControl.h"                                     /* LedControlのAPIと型定義 */
 #include "LcdUi.h"                                          /* LcdUiのAPIと型定義 */
 #include "PlantDoctorConfig.h"                              /* PlantDoctorConfigのAPIと型定義 */
+#include "SensorManager.h"                                  /* センサー取得APIとスナップショット型 */
 
 static APP_STATE s_state;                                   /**< モジュール内部状態 */
 static PLANT_DOCTOR_ERROR s_error;                          /**< モジュール内部状態 */
 static uint16_t s_stateTicks;                               /**< モジュール内部状態 */
 static uint16_t s_ledTicks;                                 /**< モジュール内部状態 */
+static uint16_t s_sensorDisplayTicks;                       /**< センサー画面切替までのTick */
+static uint16_t s_sensorRefreshTicks;                       /**< 表示中センサー画面更新までのTick */
+static uint16_t s_lcdRecoveryTicks;                         /**< 次のLCD復旧試行までのTick */
+static uint8_t s_lcdRecoveryAttempts;                       /**< 連続LCD復旧試行回数 */
 static uint8_t s_previousSwitchMask;                        /**< モジュール内部状態 */
 static uint8_t s_requestedSwitchMask;                       /**< モジュール内部状態 */
+static uint8_t s_sensorPage;                                /**< 表示中センサーページ */
 static bool s_uiUpdatePending;                              /**< モジュール内部状態 */
+static bool s_sensorDisplayPending;                         /**< センサー画面更新要求 */
+static bool s_lcdRecoveryActive;                            /**< LCD復旧処理中 */
+static bool s_lcdRecoveryPending;                           /**< LCD復旧試行要求 */
 static bool s_errorShown;                                   /**< モジュール内部状態 */
 static bool s_errorLedPhase;                                /**< モジュール内部状態 */
 
 /** =================================================================*
  * @brief  AppStateMachine_SetState処理
  * @param[in] state 引数
- * @return 実行結果または取得値
  * ================================================================= */
 static void AppStateMachine_SetState(APP_STATE state) {
     s_state = state;
     s_stateTicks = 0U;
     s_ledTicks = 0U;
+    s_sensorDisplayTicks = 0U;
+    s_sensorRefreshTicks = 0U;
+    s_lcdRecoveryTicks = 0U;
+    s_lcdRecoveryAttempts = 0U;
+    s_sensorDisplayPending = (state == APP_STATE_MONITOR);
+    s_lcdRecoveryActive = false;
+    s_lcdRecoveryPending = false;
+}
+
+/** =================================================================*
+ * @brief  LCDの復旧処理を開始する。
+ * ================================================================= */
+static void AppStateMachine_StartLcdRecovery(void) {
+    s_lcdRecoveryActive = true;
+    s_lcdRecoveryTicks = 0U;
+    if (s_lcdRecoveryAttempts == 0U) {
+        s_lcdRecoveryPending = true;
+    } else if (s_lcdRecoveryAttempts >= PLANT_DOCTOR_LCD_RECOVERY_MAX_ATTEMPTS) {
+        AppStateMachine_EnterError(PLANT_DOCTOR_ERROR_LCD_IO);
+    } else {
+        s_lcdRecoveryPending = false;
+    }
+}
+
+/** =================================================================*
+ * @brief  要求済みのLCD復旧を1回実行する。
+ * @details 復旧不能な状態が連続した場合だけERRORへ遷移する。
+ * ================================================================= */
+static void AppStateMachine_ProcessLcdRecovery(void) {
+    if (!s_lcdRecoveryPending) {
+        return;
+    }
+
+    s_lcdRecoveryPending = false;
+    if (s_lcdRecoveryAttempts >= PLANT_DOCTOR_LCD_RECOVERY_MAX_ATTEMPTS) {
+        AppStateMachine_EnterError(PLANT_DOCTOR_ERROR_LCD_IO);
+        return;
+    }
+
+    ++s_lcdRecoveryAttempts;
+    if (LcdUi_Recover()) {
+        s_lcdRecoveryActive = false;
+        s_lcdRecoveryTicks = 0U;
+        s_uiUpdatePending = true;
+        s_sensorDisplayPending = true;
+    } else if (s_lcdRecoveryAttempts >= PLANT_DOCTOR_LCD_RECOVERY_MAX_ATTEMPTS) {
+        AppStateMachine_EnterError(PLANT_DOCTOR_ERROR_LCD_IO);
+    }
 }
 
 /** =================================================================*
@@ -38,7 +94,9 @@ void AppStateMachine_Init(void) {
     s_error = PLANT_DOCTOR_ERROR_NONE;
     s_previousSwitchMask = 0U;
     s_requestedSwitchMask = 0U;
+    s_sensorPage = 0U;
     s_uiUpdatePending = false;
+    s_sensorDisplayPending = false;
     s_errorShown = false;
     s_errorLedPhase = false;
     AppStateMachine_SetState(APP_STATE_BOOT);
@@ -68,10 +126,23 @@ void AppStateMachine_Process(void) {
             break;
 
         case APP_STATE_MONITOR:
-            if (s_uiUpdatePending) {
+            if (s_lcdRecoveryActive) {
+                AppStateMachine_ProcessLcdRecovery();
+            } else if (s_uiUpdatePending) {
                 s_uiUpdatePending = false;
                 if (!LcdUi_ShowSwitch(s_requestedSwitchMask)) {
-                    AppStateMachine_EnterError(PLANT_DOCTOR_ERROR_LCD_IO);
+                    AppStateMachine_StartLcdRecovery();
+                }
+            } else if (s_sensorDisplayPending) {
+                PLANT_SENSOR_SNAPSHOT snapshot;
+
+                s_sensorDisplayPending = false;
+                if (SensorManager_GetLatest(&snapshot)) {
+                    if (!LcdUi_ShowSensorPage(&snapshot, s_sensorPage)) {
+                        AppStateMachine_StartLcdRecovery();
+                    } else {
+                        s_lcdRecoveryAttempts = 0U;
+                    }
                 }
             }
             break;
@@ -106,6 +177,24 @@ void AppStateMachine_Tick10Ms(void) {
         if (s_ledTicks >= PLANT_DOCTOR_LED_BLINK_TICKS) {
             s_ledTicks = 0U;
             LedControl_Toggle(LED_CONTROL_1);
+        }
+        ++s_sensorDisplayTicks;
+        if (s_sensorDisplayTicks >= PLANT_DOCTOR_SENSOR_DISPLAY_TICKS) {
+            s_sensorDisplayTicks = 0U;
+            s_sensorPage = (uint8_t)((s_sensorPage + 1U) % 3U);
+            s_sensorDisplayPending = true;
+        }
+        ++s_sensorRefreshTicks;
+        if (s_sensorRefreshTicks >= PLANT_DOCTOR_SENSOR_SAMPLE_TICKS) {
+            s_sensorRefreshTicks = 0U;
+            s_sensorDisplayPending = true;
+        }
+        if (s_lcdRecoveryActive) {
+            ++s_lcdRecoveryTicks;
+            if (s_lcdRecoveryTicks >= PLANT_DOCTOR_LCD_RECOVERY_INTERVAL_TICKS) {
+                s_lcdRecoveryTicks = 0U;
+                s_lcdRecoveryPending = true;
+            }
         }
 
         switchMask = Board_GetPressedSwitchMask();

@@ -11,7 +11,10 @@
 typedef struct {
     int16_t airTemperatureCentiC;
     uint16_t relativeHumidityCentiPercent;
+    uint32_t illuminanceCentiLux;
     uint16_t illuminanceRaw;
+    bool airTemperatureValid;
+    bool illuminanceValid;
 } ENVIRONMENT_SENSOR_SAMPLE;
 
 bool EnvironmentSensor_Init(void);                          /* EnvironmentSensor_InitのAPI */

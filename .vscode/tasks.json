@@ -51,24 +51,6 @@
       ],
       "dependsOn": "Build: Debug",
       "problemMatcher": []
-    },
-    {
-      "label": "Flash: Sensor Diagnostic (MCU-Link)",
-      "type": "shell",
-      "command": "powershell",
-      "args": [
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        "${workspaceFolder}/firmware/ml63q2557/scripts/flash.ps1",
-        "-Preset",
-        "debug",
-        "-Target",
-        "SensorDiagnostic"
-      ],
-      "dependsOn": "Build: Debug",
-      "problemMatcher": []
     }
   ]
 }

@@ -2,7 +2,7 @@ param(
     [ValidateSet("debug", "release")]
     [string]$Preset = "debug",
 
-    [ValidateSet("PlantDoctor", "SensorDiagnostic")]
+    [ValidateSet("PlantDoctor")]
     [string]$Target = "PlantDoctor"
 )
 

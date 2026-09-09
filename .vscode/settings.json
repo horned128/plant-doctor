@@ -1,8 +1,7 @@
 {
-  "cmake.cmakePath": "${env:USERPROFILE}/.platformio/packages/tool-cmake/bin/cmake.exe",
   "cmake.useCMakePresets": "always",
   "cmake.sourceDirectory": "${workspaceFolder}/firmware/ml63q2557",
-  "cmake.configureOnOpen": true,
+  "cmake.configureOnOpen": false,
   "cmake.configurePreset": "debug",
   "cmake.buildPreset": "debug",
   "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",

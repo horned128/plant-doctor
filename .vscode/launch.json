@@ -18,7 +18,30 @@
       ],
       "svdFile": "${env:LOCALAPPDATA}/Arm/Packs/ROHM/ML63Q25x7_DFP/1.1.0/SVD/ML63Q25x7.svd",
       "runToEntryPoint": "main",
-      "interface": "swd"
+      "interface": "swd",
+      "osx": {
+        "servertype": "pyocd",
+        "serverpath": "${workspaceFolder}/firmware/ml63q2557/scripts/pyocd-macos.sh",
+        "gdbPath": "${env:HOME}/.platformio/packages/toolchain-gccarmnoneeabi/bin/arm-none-eabi-gdb",
+        "armToolchainPath": "${env:HOME}/.platformio/packages/toolchain-gccarmnoneeabi/bin",
+        "configFiles": [],
+        "svdFile": "${workspaceFolder}/firmware/ml63q2557/.tooling/rohm-pack/SVD/ML63Q25x7.svd",
+        "targetId": "ml63q25x7",
+        "overrideGDBServerStartedRegex": "GDB server listening on port [0-9]+",
+        "serverArgs": [
+          "-O",
+          "reset_type=emulated"
+        ],
+        "overrideLaunchCommands": [
+          "monitor halt",
+          "load",
+          "monitor reset halt emulated"
+        ],
+        "overrideResetCommands": [
+          "monitor reset halt emulated"
+        ],
+        "showDevDebugOutput": "both"
+      }
     }
   ]
 }

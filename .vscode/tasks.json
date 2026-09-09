@@ -2,8 +2,28 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "Toolchain: Setup",
+      "type": "process",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}/firmware/ml63q2557/scripts/setup-toolchain.ps1"
+      ],
+      "osx": {
+        "command": "/bin/bash",
+        "args": [
+          "${workspaceFolder}/firmware/ml63q2557/scripts/setup-toolchain.sh",
+          "--build-only"
+        ]
+      },
+      "problemMatcher": []
+    },
+    {
       "label": "Build: Debug",
-      "type": "shell",
+      "type": "process",
       "command": "powershell",
       "args": [
         "-NoProfile",
@@ -14,6 +34,14 @@
         "-Preset",
         "debug"
       ],
+      "osx": {
+        "command": "/bin/bash",
+        "args": [
+          "${workspaceFolder}/firmware/ml63q2557/scripts/build.sh",
+          "--preset",
+          "debug"
+        ]
+      },
       "group": {
         "kind": "build",
         "isDefault": true
@@ -22,7 +50,7 @@
     },
     {
       "label": "Build: Release",
-      "type": "shell",
+      "type": "process",
       "command": "powershell",
       "args": [
         "-NoProfile",
@@ -33,12 +61,20 @@
         "-Preset",
         "release"
       ],
+      "osx": {
+        "command": "/bin/bash",
+        "args": [
+          "${workspaceFolder}/firmware/ml63q2557/scripts/build.sh",
+          "--preset",
+          "release"
+        ]
+      },
       "group": "build",
       "problemMatcher": ["$gcc"]
     },
     {
       "label": "Flash: Debug (MCU-Link)",
-      "type": "shell",
+      "type": "process",
       "command": "powershell",
       "args": [
         "-NoProfile",
@@ -49,6 +85,14 @@
         "-Preset",
         "debug"
       ],
+      "osx": {
+        "command": "/bin/bash",
+        "args": [
+          "${workspaceFolder}/firmware/ml63q2557/scripts/flash.sh",
+          "--preset",
+          "debug"
+        ]
+      },
       "dependsOn": "Build: Debug",
       "problemMatcher": []
     }

@@ -1,0 +1,3 @@
+[submodule "firmware/ml63q2557/external/CMSIS"]
+	path = firmware/ml63q2557/external/CMSIS
+	url = https://github.com/ARM-software/CMSIS_6.git

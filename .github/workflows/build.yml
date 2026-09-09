@@ -10,35 +10,39 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     strategy:
       fail-fast: false
       matrix:
-        build_type: [Debug, Release]
+        preset: [debug, release]
 
     steps:
       - name: Check out Plant Doctor
         uses: actions/checkout@v4
-
-      - name: Check out CMSIS 6
-        uses: actions/checkout@v4
         with:
-          repository: ARM-software/CMSIS_6
-          ref: b2dfbe1a20bbd49c2d2c605073799671074bbb30
-          path: external/CMSIS
+          submodules: recursive
 
       - name: Install ARM GCC
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-arm-none-eabi libnewlib-arm-none-eabi ninja-build
+          sudo apt-get install -y \
+            gcc-arm-none-eabi \
+            libnewlib-arm-none-eabi \
+            ninja-build
+
+      - name: Verify CMSIS
+        run: |
+          test -f firmware/ml63q2557/external/CMSIS/CMSIS/Core/Include/cmsis_compiler.h
 
       - name: Configure
-        run: >-
-          cmake -S firmware/ml63q2557 -B firmware/ml63q2557/build/${{ matrix.build_type }} -G Ninja
-          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
-          -DCMAKE_TOOLCHAIN_FILE=firmware/ml63q2557/cmake/arm-none-eabi-toolchain.cmake
+        working-directory: firmware/ml63q2557
+        run: cmake --preset ${{ matrix.preset }}
 
       - name: Build
-        run: cmake --build firmware/ml63q2557/build/${{ matrix.build_type }} --parallel
+        working-directory: firmware/ml63q2557
+        run: cmake --build --preset ${{ matrix.preset }}
 
       - name: Report size
-        run: arm-none-eabi-size firmware/ml63q2557/build/${{ matrix.build_type }}/PlantDoctor.elf
+        run: |
+          arm-none-eabi-size \
+            firmware/ml63q2557/build/${{ matrix.preset }}/PlantDoctor.elf

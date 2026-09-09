@@ -7,25 +7,18 @@
   },
   "configurePresets": [
     {
-      "name": "windows-base",
+      "name": "base",
       "hidden": true,
       "generator": "Ninja",
-      "environment": {
-        "PATH": "$env{USERPROFILE}/.platformio/packages/toolchain-gccarmnoneeabi/bin;$env{USERPROFILE}/.platformio/packages/tool-ninja;$penv{PATH}"
-      },
       "cacheVariables": {
-        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/arm-none-eabi-toolchain.cmake"
-      },
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Windows"
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/arm-none-eabi-toolchain.cmake",
+        "CMSIS_CORE_INCLUDE": "${sourceDir}/external/CMSIS/CMSIS/Core/Include"
       }
     },
     {
       "name": "debug",
       "displayName": "PlantDoctor Debug",
-      "inherits": "windows-base",
+      "inherits": "base",
       "binaryDir": "${sourceDir}/build/debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug"
@@ -34,7 +27,7 @@
     {
       "name": "release",
       "displayName": "PlantDoctor Release",
-      "inherits": "windows-base",
+      "inherits": "base",
       "binaryDir": "${sourceDir}/build/release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"

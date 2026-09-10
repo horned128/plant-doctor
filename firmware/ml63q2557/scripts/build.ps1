@@ -1,10 +1,18 @@
 param(
     [ValidateSet("debug", "release")]
-    [string]$Preset = "debug"
+    [string]$Preset = "debug",
+    [switch]$Clean
 )
 
 $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path -Parent $PSScriptRoot
+
+if ($Clean) {
+    $buildDir = Join-Path $projectRoot "build/$Preset"
+    if (Test-Path -LiteralPath $buildDir) {
+        Remove-Item -LiteralPath $buildDir -Recurse -Force
+    }
+}
 
 function Find-Executable {
     param(

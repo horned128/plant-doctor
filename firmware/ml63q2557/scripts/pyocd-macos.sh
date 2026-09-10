@@ -6,6 +6,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 LOCAL_PACK_ROOT="$PROJECT_ROOT/.tooling/rohm-pack"
 PACK_ROOT="${ROHM_DFP_ROOT:-$LOCAL_PACK_ROOT}"
 USER_SCRIPT="$SCRIPT_DIR/pyocd_user_ml63q25x7.py"
+COMPAT_SCRIPT="$SCRIPT_DIR/pyocd_compat.py"
 
 find_pyocd() {
     if command -v pyocd >/dev/null 2>&1; then
@@ -22,6 +23,28 @@ find_pyocd() {
     echo "pyOCD was not found." >&2
     echo "Install it with: pipx install pyocd" >&2
     return 1
+}
+
+find_pyocd_python() {
+    local executable="$1"
+    local link_target
+
+    while [[ -L "$executable" ]]; do
+        link_target="$(readlink "$executable")"
+        if [[ "$link_target" = /* ]]; then
+            executable="$link_target"
+        else
+            executable="$(dirname "$executable")/$link_target"
+        fi
+    done
+
+    local python
+    python="$(dirname "$executable")/python"
+    [[ -x "$python" ]] || {
+        echo "Python from the pyOCD environment was not found: $python" >&2
+        return 1
+    }
+    printf '%s\n' "$python"
 }
 
 validate_pack() {
@@ -45,8 +68,10 @@ validate_pack() {
 }
 
 PYOCD="$(find_pyocd)"
+PYOCD_PYTHON="$(find_pyocd_python "$PYOCD")"
 validate_pack "$PACK_ROOT"
 [[ -f "$USER_SCRIPT" ]] || { echo "Missing pyOCD user script: $USER_SCRIPT" >&2; exit 1; }
+[[ -f "$COMPAT_SCRIPT" ]] || { echo "Missing pyOCD compatibility script: $COMPAT_SCRIPT" >&2; exit 1; }
 
 export ROHM_DFP_ROOT="$PACK_ROOT"
-exec "$PYOCD" "$@" --pack "$PACK_ROOT" --script "$USER_SCRIPT"
+exec "$PYOCD_PYTHON" "$COMPAT_SCRIPT" "$@" --pack "$PACK_ROOT" --script "$USER_SCRIPT"

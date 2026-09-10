@@ -105,7 +105,7 @@ pipx install pyocd
 
 ```bash
 pyocd --version
-pyocd list
+./firmware/ml63q2557/scripts/pyocd-macos.sh list
 ```
 
 MCU-Link接続時は、例えば次のようにCMSIS-DAP probeが表示されます。
@@ -113,6 +113,11 @@ MCU-Link接続時は、例えば次のようにCMSIS-DAP probeが表示されま
 ```text
 NXP Semiconductors MCU-LINK (...) CMSIS-DAP
 ```
+
+リポジトリ内のpyOCD操作には`pyocd-macos.sh`を使用します。このwrapperはローカルDFPと
+ML63Q25x7用user scriptを読み込み、MCU-LinkがCMSIS-DAP HID interfaceをusage page
+`0xFFEB`で公開する場合の互換処理も適用します。互換処理はNXP MCU-Link
+（VID/PID `1FC9:0143`）だけに限定しています。
 
 ### 3. ROHM Device Family Pack
 
@@ -219,7 +224,7 @@ Terminal > Run Task > Flash: Debug (MCU-Link)
 
 ### macOS
 
-`flash.sh`からpyOCDを使用します。
+`flash.sh`から`pyocd-macos.sh`を経由してpyOCDを使用します。
 
 ```bash
 ./firmware/ml63q2557/scripts/flash.sh --preset debug
@@ -239,6 +244,10 @@ Flash programming:      0x10000000-0x1003FFFF
 
 また、packが自動生成する`0x00000000`側の重複FlashRegionのみを削除し、
 実行用`IROM1`は保持します。
+
+同じuser scriptは、Flash algorithmの実行中も動作し続けるwatchdogを8秒へ延長し、
+読み出し・sector erase・page programの前にserviceします。これにより、アプリケーションの
+通常設定である2秒watchdogがFlash処理中にMCUをresetしてSWD通信を切る問題を回避します。
 
 正常な書き込みではpyOCDから、例えば次のように0より大きいprogrammed byte数が表示されます。
 同じELFを書き込み済みの場合は`programmed 0 bytes`かつ`identical N bytes`でも正常です。
@@ -315,15 +324,24 @@ firmware/ml63q2557/scripts/pyocd_user_ml63q25x7.py
 ML63Q25x7のpack reset sequenceによるものです。現在の`flash.sh`と`launch.json`は
 pre/post resetを抑止し、emulated resetを使用して回避します。
 
+### Erase／program中の`SWD/JTAG communication failure (WAIT ACK)`
+
+Flash algorithmの実行中にアプリケーションの2秒watchdogが発火すると、MCUがresetして
+SWD通信が切れます。現在の`pyocd_user_ml63q25x7.py`はdebug接続中のwatchdogを8秒へ延長し、
+Flash操作の区切りごとにserviceします。必ず`flash.sh`または`pyocd-macos.sh`経由で実行してください。
+
 ### pyOCDからMCU-Linkが見えない
 
 USB接続直後は列挙に時間がかかる場合があります。数秒待ってから再実行してください。
 
 ```bash
-pyocd list
+./firmware/ml63q2557/scripts/pyocd-macos.sh list
 ```
 
-それでも表示されない場合はUSBケーブル、MCU-Link、ターゲット給電を確認します。
+MCU-Link firmware V3.172ではCMSIS-DAP HID interfaceがusage page `0xFFEB`で列挙され、
+pyOCD 0.45.1の標準filterで除外される場合があります。`pyocd-macos.sh`はこの組み合わせを
+互換処理するため、直接`pyocd list`を実行せずwrapperを使用してください。それでも表示されない場合は
+USBケーブル、MCU-Link、ターゲット給電を確認します。
 
 ## テンプレートとの差分
 

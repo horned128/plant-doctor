@@ -46,8 +46,11 @@ void App_RunOnce(void) {
         if (!Board_Process10Ms()) {
             AppStateMachine_EnterError(PLANT_DOCTOR_ERROR_SWITCH);
         }
-        SensorManager_Process10Ms();
-        PlantAi_Process10Ms();
+        if (AppStateMachine_GetState() != APP_STATE_ERROR) {
+            SensorManager_Process10Ms();
+            PlantAi_Process10Ms();
+        }
+        PumpControl_Process10Ms();
         PlantLog_Process10Ms();
         AppStateMachine_Tick10Ms();
     }

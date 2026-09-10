@@ -4,6 +4,7 @@
  * ================================================================= */
 #include "Board.h"                                          /* BoardのAPIと型定義 */
 #include "BoardTimer.h"                                     /* BoardTimerのAPIと型定義 */
+#include "I2cBus.h"                                         /* I2cBusのAPIと型定義 */
 #include "LedControl.h"                                     /* LedControlのAPIと型定義 */
 #include "PowerControlAdapter.h"                            /* PowerControlAdapterのAPIと型定義 */
 #include "SwitchControl.h"                                  /* SwitchControlのAPIと型定義 */
@@ -32,6 +33,7 @@ PLANT_DOCTOR_ERROR Board_Init(void) {
     if (!SwitchControl_Init() && (error == PLANT_DOCTOR_ERROR_NONE)) {
         error = PLANT_DOCTOR_ERROR_SWITCH;
     }
+    (void)I2cBus_Init();
     if (!BoardTimer_Init() && (error == PLANT_DOCTOR_ERROR_NONE)) {
         error = PLANT_DOCTOR_ERROR_TIMER;
     }

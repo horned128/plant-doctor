@@ -1,1 +1,8 @@
-* text=auto
+* text=auto eol=lf
+
+# Keep generated and vendor binaries out of text normalization.
+*.bin -text
+*.elf -text
+*.hex -text
+*.flm -text
+*.pdf -text

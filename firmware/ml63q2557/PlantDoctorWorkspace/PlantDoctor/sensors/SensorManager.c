@@ -22,16 +22,18 @@ bool SensorManager_Init(void) {
     s_latest.leafTemperatureCentiC = 0;
     s_latest.airTemperatureCentiC = 0;
     s_latest.relativeHumidityCentiPercent = 0U;
+    s_latest.barometricPressurePa = 0UL;
     s_latest.illuminanceCentiLux = 0UL;
     s_latest.illuminanceRaw = 0U;
     s_latest.soilMoistureValid = false;
     s_latest.leafTemperatureValid = false;
     s_latest.airTemperatureValid = false;
+    s_latest.barometricPressureValid = false;
     s_latest.illuminanceValid = false;
     s_latest.tankLiquidDetected = false;
     s_latest.valid = false;
     s_sampleTicks = PLANT_DOCTOR_SENSOR_SAMPLE_TICKS;
-    s_samplePending = true;
+    s_samplePending = false;
 
     return SoilMoistureSensor_Init() && LeafTemperatureSensor_Init() &&
         EnvironmentSensor_Init() && TankLevelSensor_Init();
@@ -60,15 +62,16 @@ void SensorManager_Process10Ms(void) {
     (void)EnvironmentSensor_Read(&environment);
     s_latest.airTemperatureCentiC = environment.airTemperatureCentiC;
     s_latest.relativeHumidityCentiPercent = environment.relativeHumidityCentiPercent;
+    s_latest.barometricPressurePa = environment.barometricPressurePa;
     s_latest.illuminanceCentiLux = environment.illuminanceCentiLux;
     s_latest.illuminanceRaw = environment.illuminanceRaw;
     s_latest.airTemperatureValid = environment.airTemperatureValid;
+    s_latest.barometricPressureValid = environment.barometricPressureValid;
     s_latest.illuminanceValid = environment.illuminanceValid;
     s_latest.tankLiquidDetected = TankLevelSensor_IsLiquidDetected();
     /* 未接続センサーは無効値として表示し、起動・他センサーの計測を継続する。 */
     s_latest.valid = true;
 }
-
 /** =================================================================*
  * @brief  SensorManager_GetLatest処理
  * @param[out] snapshot 引数

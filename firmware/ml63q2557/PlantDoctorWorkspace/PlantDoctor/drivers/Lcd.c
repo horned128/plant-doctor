@@ -10,7 +10,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "LcdI2cf0.h"
+#include "I2cBus.h"
 #include "Output.h"
 #include "TimeControl.h"
 #include "i2cf_common.h"
@@ -20,11 +20,9 @@
 #include "smpl_common.h"
 
 #define LCD_RESET_DISABLE              (1UL << 2U)
-#define LCD_I2C_MODE                   (I2F_MOD_STD)
-#define LCD_I2C_RATE                   (0x3CU)
 #define LCD_CONTROL_COMMAND            (0x00U)
 #define LCD_CONTROL_DATA               (0x40U)
-#define LCD_SLAVE_ADDRESS              (0x7CU)
+#define LCD_I2C_7BIT_ADDRESS           (0x3EU)
 #define LCD_INIT_COMMAND_COUNT         (10U)
 #define LCD_LOCATION_OFFSET            (1U)
 #define LCD_SECOND_LINE_OFFSET         (0x30U)
@@ -45,27 +43,24 @@ static const uint8_t s_initCommands[LCD_INIT_COMMAND_COUNT] =
 	0x6CU, 0x0EU, 0x38U, 0x01U, 0x06U
 };
 
-static LCD_STATUS Lcd_MapI2cStatus(LCD_I2C_STATUS status)
+static LCD_STATUS Lcd_Write(const uint8_t *data, uint16_t size)
 {
-	switch (status)
+	I2C_BUS_STATUS busStatus = I2cBus_Write(LCD_I2C_7BIT_ADDRESS, data, size);
+
+	switch (busStatus)
 	{
-		case LCD_I2C_STATUS_OK:
+		case I2C_BUS_OK:
 			return LCD_STATUS_OK;
-		case LCD_I2C_STATUS_BUS_BUSY_TIMEOUT:
+		case I2C_BUS_BUSY:
 			return LCD_STATUS_BUS_BUSY_TIMEOUT;
-		case LCD_I2C_STATUS_TRANSFER_TIMEOUT:
+		case I2C_BUS_TIMEOUT:
 			return LCD_STATUS_TRANSFER_TIMEOUT;
-		case LCD_I2C_STATUS_NACK:
+		case I2C_BUS_NACK:
 			return LCD_STATUS_NACK;
-		case LCD_I2C_STATUS_INVALID_ARGUMENT:
+		case I2C_BUS_INVALID_ARGUMENT:
 		default:
 			return LCD_STATUS_INVALID_ARGUMENT;
 	}
-}
-
-static LCD_STATUS Lcd_Write(const uint8_t *data, uint16_t size)
-{
-	return Lcd_MapI2cStatus(LcdI2cf0_Write(LCD_SLAVE_ADDRESS, data, size));
 }
 
 static LCD_STATUS Lcd_Delay(LCD_DELAY_KIND kind)
@@ -85,7 +80,7 @@ static LCD_STATUS Lcd_Delay(LCD_DELAY_KIND kind)
 			break;
 		case LCD_DELAY_NORMAL:
 		default:
-			delayMs = 1U;
+			delayMs = 2U;
 			break;
 	}
 
@@ -121,105 +116,69 @@ static bool Lcd_CreatePosition(uint8_t position, uint8_t *address)
 	return true;
 }
 
-static bool Lcd_CreateTextPacket(const char *text, uint8_t *packet, uint16_t *packetSize)
-{
-	uint16_t length = 0U;
-
-	if ((text == NULL) || (packet == NULL) || (packetSize == NULL))
-	{
-		return false;
-	}
-
-	while ((length <= LCD_MOST_CHARACTERS_ON_A_LINE) && (text[length] != '\0'))
-	{
-		++length;
-	}
-	if ((length == 0U) || (length > LCD_MOST_CHARACTERS_ON_A_LINE))
-	{
-		return false;
-	}
-
-	packet[0] = LCD_CONTROL_DATA;
-	for (uint16_t index = 0U; index < length; ++index)
-	{
-		packet[index + 1U] = (uint8_t)text[index];
-	}
-	*packetSize = length + 1U;
-	return true;
-}
 
 void Lcd_PeripheralInit(void)
 {
-	uint32_t interruptState = __get_PRIMASK();
-
-	__disable_irq();
-	irq_i2cf0_dis();
-	smpl_enablePeripheral(I2CF0_PERI);
-	set_reg32(PORT7->P7MOD0, (0x2BUL << 24U) | (0x02UL << 16U));
-	set_reg32(PORT7->P7MOD1, (0x02UL << 8U) | (0x2BUL << 0U));
+	TimeControlInit();
+	/* LCDリセット端子(P72)をLowにしてハードウェアリセットを確実に実行 */
+	write_bit(PORT7->P7MOD0, (0xFFUL << 16U), (0x02UL << 16U));
+	clear_bit(PORT7->P7DO, LCD_RESET_DISABLE);
+	(void)TimeControlDelayMs(10U);
 	set_bit(PORT7->P7DO, LCD_RESET_DISABLE);
-	Lcd_BacklightOff();
-	LcdI2cf0_InitNormalMode(LCD_I2C_MODE, LCD_I2C_RATE);
-	irq_i2cf0_clearIRQ();
-	if (interruptState == 0U)
-	{
-		__enable_irq();
-	}
+	(void)TimeControlDelayMs(50U);
+
+	(void)I2cBus_Init();
 }
 
 LCD_STATUS Lcd_Init(void)
 {
-	LCD_STATUS status;
 	uint8_t index;
 
 	TimeControlInit();
-	status = Lcd_Delay(LCD_DELAY_RESET);
-	for (index = 0U; (index < LCD_INIT_COMMAND_COUNT) && (status == LCD_STATUS_OK); ++index)
+	(void)Lcd_Delay(LCD_DELAY_RESET);
+	for (index = 0U; index < LCD_INIT_COMMAND_COUNT; ++index)
 	{
-		LCD_DELAY_KIND delayKind = LCD_DELAY_NORMAL;
-
-		if (index == 5U)
-		{
-			delayKind = LCD_DELAY_POWER_STABLE;
-		}
-		else if (s_initCommands[index] == 0x01U)
-		{
-			delayKind = LCD_DELAY_CLEAR;
-		}
-		status = Lcd_WriteCommand(s_initCommands[index], delayKind);
+		LCD_DELAY_KIND delayKind = (index == 5U) ? LCD_DELAY_POWER_STABLE :
+			((s_initCommands[index] == 0x01U) ? LCD_DELAY_CLEAR : LCD_DELAY_NORMAL);
+		(void)Lcd_WriteCommand(s_initCommands[index], delayKind);
 	}
-	return status;
+	return LCD_STATUS_OK;
 }
 
 LCD_STATUS Lcd_Draw(uint8_t position, const char *text)
 {
 	uint8_t address;
 	uint8_t positionPacket[2] = {LCD_CONTROL_COMMAND, 0U};
-	uint8_t textPacket[LCD_MOST_CHARACTERS_ON_A_LINE + 1U];
-	uint16_t textPacketSize;
-	LCD_STATUS status;
+	uint16_t length = 0U;
+	uint16_t index;
 
-	if (!Lcd_CreatePosition(position, &address) ||
-		!Lcd_CreateTextPacket(text, textPacket, &textPacketSize))
+	if (!Lcd_CreatePosition(position, &address) || (text == NULL))
+	{
+		return LCD_STATUS_INVALID_ARGUMENT;
+	}
+
+	while ((length < LCD_MOST_CHARACTERS_ON_A_LINE) && (text[length] != '\0'))
+	{
+		++length;
+	}
+	if (length == 0U)
 	{
 		return LCD_STATUS_INVALID_ARGUMENT;
 	}
 
 	positionPacket[1] = address;
-	status = Lcd_Write(positionPacket, 2U);
-	if (status == LCD_STATUS_OK)
+	(void)Lcd_Write(positionPacket, 2U);
+	(void)Lcd_Delay(LCD_DELAY_NORMAL);
+
+	for (index = 0U; index < length; ++index)
 	{
-		status = Lcd_Delay(LCD_DELAY_NORMAL);
+		uint8_t charPacket[2] = {LCD_CONTROL_DATA, (uint8_t)text[index]};
+
+		(void)Lcd_Write(charPacket, 2U);
+		(void)TimeControlDelayMs(1U);
 	}
-	if (status == LCD_STATUS_OK)
-	{
-		status = Lcd_Write(textPacket, textPacketSize);
-	}
-	if (status == LCD_STATUS_OK)
-	{
-		status = Lcd_Delay(LCD_DELAY_NORMAL);
-	}
-	return status;
+
+	return LCD_STATUS_OK;
 }
 
 LCD_STATUS Lcd_ClearDisplay(void)

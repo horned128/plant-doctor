@@ -8,10 +8,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$elfPath = Join-Path $projectRoot "build/$Preset/$Target.elf"
+$hexPath = Join-Path $projectRoot "build/$Preset/$Target.hex"
 
-if (-not (Test-Path -LiteralPath $elfPath)) {
-    throw "Firmware was not found: $elfPath. Build the $Preset preset first."
+if (-not (Test-Path -LiteralPath $hexPath)) {
+    throw "Firmware was not found: $hexPath. Build the $Preset preset first."
 }
 
 $openOcd = "C:/LAPIS/LEXIDE/gdb/openocd_arm.exe"
@@ -29,8 +29,8 @@ foreach ($path in @($openOcd, $interfaceConfig, $targetConfig)) {
     }
 }
 
-$openOcdElfPath = (Resolve-Path -LiteralPath $elfPath).Path.Replace("\", "/")
-& $openOcd -f $interfaceConfig -f $targetConfig -c "program {$openOcdElfPath} verify reset exit"
+$openOcdHexPath = (Resolve-Path -LiteralPath $hexPath).Path.Replace("\", "/")
+& $openOcd -f $interfaceConfig -f $targetConfig -c "program {$openOcdHexPath} verify reset exit"
 if ($LASTEXITCODE -ne 0) {
     throw "OpenOCD flashing failed with exit code $LASTEXITCODE."
 }

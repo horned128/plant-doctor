@@ -9,7 +9,9 @@
 #include "LedControl.h"                                     /* LedControlのAPIと型定義 */
 #include "LcdUi.h"                                          /* LcdUiのAPIと型定義 */
 #include "PlantDoctorConfig.h"                              /* PlantDoctorConfigのAPIと型定義 */
+#include "PumpControl.h"                                    /* PumpControlのAPIと型定義 */
 #include "SensorManager.h"                                  /* センサー取得APIとスナップショット型 */
+#include "SwitchControl.h"                                  /* SwitchControlのAPIと型定義 */
 
 static APP_STATE s_state;                                   /**< モジュール内部状態 */
 static PLANT_DOCTOR_ERROR s_error;                          /**< モジュール内部状態 */
@@ -24,6 +26,9 @@ static uint8_t s_requestedSwitchMask;                       /**< モジュール
 static uint8_t s_sensorPage;                                /**< 表示中センサーページ */
 static bool s_uiUpdatePending;                              /**< モジュール内部状態 */
 static bool s_sensorDisplayPending;                         /**< センサー画面更新要求 */
+static bool s_pumpMessagePending;                           /**< ポンプメッセージ表示要求 */
+static const char *s_pumpMessage;                           /**< ポンプ表示メッセージ */
+static uint16_t s_pumpUiHoldTicks;                          /**< ポンプUI表示維持Tick */
 static bool s_lcdRecoveryActive;                            /**< LCD復旧処理中 */
 static bool s_lcdRecoveryPending;                           /**< LCD復旧試行要求 */
 static bool s_errorShown;                                   /**< モジュール内部状態 */
@@ -42,6 +47,9 @@ static void AppStateMachine_SetState(APP_STATE state) {
     s_lcdRecoveryTicks = 0U;
     s_lcdRecoveryAttempts = 0U;
     s_sensorDisplayPending = (state == APP_STATE_MONITOR);
+    s_pumpMessagePending = false;
+    s_pumpMessage = 0;
+    s_pumpUiHoldTicks = 0U;
     s_lcdRecoveryActive = false;
     s_lcdRecoveryPending = false;
 }
@@ -50,20 +58,16 @@ static void AppStateMachine_SetState(APP_STATE state) {
  * @brief  LCDの復旧処理を開始する。
  * ================================================================= */
 static void AppStateMachine_StartLcdRecovery(void) {
-    s_lcdRecoveryActive = true;
-    s_lcdRecoveryTicks = 0U;
-    if (s_lcdRecoveryAttempts == 0U) {
-        s_lcdRecoveryPending = true;
-    } else if (s_lcdRecoveryAttempts >= PLANT_DOCTOR_LCD_RECOVERY_MAX_ATTEMPTS) {
-        AppStateMachine_EnterError(PLANT_DOCTOR_ERROR_LCD_IO);
-    } else {
+    if (!s_lcdRecoveryActive) {
+        s_lcdRecoveryActive = true;
+        s_lcdRecoveryTicks = 0U;
         s_lcdRecoveryPending = false;
     }
 }
 
 /** =================================================================*
  * @brief  要求済みのLCD復旧を1回実行する。
- * @details 復旧不能な状態が連続した場合だけERRORへ遷移する。
+ * @details 復旧不能時もシステムを停止させずMONITORを継続する。
  * ================================================================= */
 static void AppStateMachine_ProcessLcdRecovery(void) {
     if (!s_lcdRecoveryPending) {
@@ -72,7 +76,7 @@ static void AppStateMachine_ProcessLcdRecovery(void) {
 
     s_lcdRecoveryPending = false;
     if (s_lcdRecoveryAttempts >= PLANT_DOCTOR_LCD_RECOVERY_MAX_ATTEMPTS) {
-        AppStateMachine_EnterError(PLANT_DOCTOR_ERROR_LCD_IO);
+        s_lcdRecoveryActive = false;
         return;
     }
 
@@ -80,10 +84,11 @@ static void AppStateMachine_ProcessLcdRecovery(void) {
     if (LcdUi_Recover()) {
         s_lcdRecoveryActive = false;
         s_lcdRecoveryTicks = 0U;
+        s_lcdRecoveryAttempts = 0U;
         s_uiUpdatePending = true;
         s_sensorDisplayPending = true;
     } else if (s_lcdRecoveryAttempts >= PLANT_DOCTOR_LCD_RECOVERY_MAX_ATTEMPTS) {
-        AppStateMachine_EnterError(PLANT_DOCTOR_ERROR_LCD_IO);
+        s_lcdRecoveryActive = false;
     }
 }
 
@@ -97,6 +102,9 @@ void AppStateMachine_Init(void) {
     s_sensorPage = 0U;
     s_uiUpdatePending = false;
     s_sensorDisplayPending = false;
+    s_pumpMessagePending = false;
+    s_pumpMessage = 0;
+    s_pumpUiHoldTicks = 0U;
     s_errorShown = false;
     s_errorLedPhase = false;
     AppStateMachine_SetState(APP_STATE_BOOT);
@@ -109,12 +117,11 @@ void AppStateMachine_Process(void) {
     switch (s_state) {
         case APP_STATE_BOOT:
             if (!LcdUi_Init()) {
-                AppStateMachine_EnterError(PLANT_DOCTOR_ERROR_LCD_INIT);
+                AppStateMachine_StartLcdRecovery();
             } else if (!LcdUi_ShowBoardTest()) {
-                AppStateMachine_EnterError(PLANT_DOCTOR_ERROR_LCD_IO);
-            } else {
-                AppStateMachine_SetState(APP_STATE_SELF_TEST);
+                AppStateMachine_StartLcdRecovery();
             }
+            AppStateMachine_SetState(APP_STATE_SELF_TEST);
             break;
 
         case APP_STATE_SELF_TEST:
@@ -128,20 +135,27 @@ void AppStateMachine_Process(void) {
         case APP_STATE_MONITOR:
             if (s_lcdRecoveryActive) {
                 AppStateMachine_ProcessLcdRecovery();
+            } else if (s_pumpMessagePending) {
+                s_pumpMessagePending = false;
+                if (!LcdUi_ShowPumpStatus(s_pumpMessage)) {
+                    AppStateMachine_StartLcdRecovery();
+                }
             } else if (s_uiUpdatePending) {
                 s_uiUpdatePending = false;
                 if (!LcdUi_ShowSwitch(s_requestedSwitchMask)) {
                     AppStateMachine_StartLcdRecovery();
                 }
             } else if (s_sensorDisplayPending) {
-                PLANT_SENSOR_SNAPSHOT snapshot;
+                if (s_pumpUiHoldTicks == 0U) {
+                    PLANT_SENSOR_SNAPSHOT snapshot;
 
-                s_sensorDisplayPending = false;
-                if (SensorManager_GetLatest(&snapshot)) {
-                    if (!LcdUi_ShowSensorPage(&snapshot, s_sensorPage)) {
-                        AppStateMachine_StartLcdRecovery();
-                    } else {
-                        s_lcdRecoveryAttempts = 0U;
+                    s_sensorDisplayPending = false;
+                    if (SensorManager_GetLatest(&snapshot)) {
+                        if (!LcdUi_ShowSensorPage(&snapshot, s_sensorPage)) {
+                            AppStateMachine_StartLcdRecovery();
+                        } else {
+                            s_lcdRecoveryAttempts = 0U;
+                        }
                     }
                 }
             }
@@ -197,14 +211,51 @@ void AppStateMachine_Tick10Ms(void) {
             }
         }
 
+        if (s_pumpUiHoldTicks > 0U) {
+            --s_pumpUiHoldTicks;
+            if (s_pumpUiHoldTicks == 0U) {
+                s_sensorDisplayPending = true;
+            }
+        }
+
         switchMask = Board_GetPressedSwitchMask();
         if (switchMask != s_previousSwitchMask) {
+            uint8_t pressedEdge = switchMask & (uint8_t)(~s_previousSwitchMask);
+
             s_previousSwitchMask = switchMask;
-            s_requestedSwitchMask = switchMask;
-            s_uiUpdatePending = true;
+            if ((pressedEdge & SWITCH_CONTROL_PSW4) != 0U) {
+                if (PumpControl_IsOn()) {
+                    (void)PumpControl_Request(false);
+                    s_pumpMessage = "PUMP STOPPED";
+                    s_pumpUiHoldTicks = 150U;
+                } else {
+                    PUMP_CONTROL_STATUS status = PumpControl_Request(true);
+
+                    if (status == PUMP_CONTROL_STATUS_OK) {
+                        s_pumpMessage = "WATERING 2.0s";
+                        s_pumpUiHoldTicks = PLANT_DOCTOR_PUMP_MAX_ON_TICKS;
+                    } else if (status == PUMP_CONTROL_STATUS_EMPTY) {
+                        s_pumpMessage = "TANK EMPTY!";
+                        s_pumpUiHoldTicks = 150U;
+                    } else if (status == PUMP_CONTROL_STATUS_COOLDOWN) {
+                        s_pumpMessage = "PUMP COOLDOWN";
+                        s_pumpUiHoldTicks = 150U;
+                    } else {
+                        s_pumpMessage = "PUMP ERROR";
+                        s_pumpUiHoldTicks = 150U;
+                    }
+                }
+                s_pumpMessagePending = true;
+            } else if ((switchMask & (SWITCH_CONTROL_PSW1 | SWITCH_CONTROL_PSW2 | SWITCH_CONTROL_PSW3)) != 0U) {
+                s_requestedSwitchMask = switchMask;
+                s_uiUpdatePending = true;
+            } else if (switchMask == 0U) {
+                s_requestedSwitchMask = 0U;
+                s_uiUpdatePending = true;
+            }
         }
         LedControl_Set(LED_CONTROL_2, (switchMask & 0x03U) != 0U);
-        LedControl_Set(LED_CONTROL_3, (switchMask & 0x0CU) != 0U);
+        LedControl_Set(LED_CONTROL_3, ((switchMask & SWITCH_CONTROL_PSW3) != 0U) || PumpControl_IsOn());
     } else if (s_state == APP_STATE_ERROR) {
         ++s_ledTicks;
         if (s_ledTicks >= PLANT_DOCTOR_ERROR_BLINK_TICKS) {
@@ -222,6 +273,7 @@ void AppStateMachine_Tick10Ms(void) {
  * @param[in] error 引数
  * ================================================================= */
 void AppStateMachine_EnterError(PLANT_DOCTOR_ERROR error) {
+    PumpControl_EmergencyStop();
     s_error = error;
     s_errorShown = false;
     s_errorLedPhase = false;

@@ -36,7 +36,8 @@ sensors/EnvironmentSensor, LeafTemperatureSensor
 | 基板制御 | `board/` | クロック、ウォッチドッグ、Timer0、電源自己保持、LED、スイッチを抽象化。 |
 | 表示 | `ui/`、`drivers/` | LCDの画面構成、LCDコマンド、I2CF0によるLCD転送。 |
 | センサー | `sensors/` | センサー取得、単位変換、妥当性判定、最新スナップショットの提供。 |
-| 将来拡張 | `ai/`、`actuator/`、`storage/` | AI判定、給水、ログの接続点。現時点では実装範囲を限定する。 |
+| 給水制御 | `actuator/` | SSR（OUT0 / P66）による給水ポンプ制御、安全タイマ（2.0秒）、手動給水操作。 |
+| 将来拡張 | `ai/`、`storage/` | AI判定、ログの接続点。現時点では実装範囲を限定する。 |
 | ベンダー共通部 | `firmware/ml63q2557/CommonFiles/` | I/Oドライバ、電源、タイマなど。アプリケーション固有コードから変更しない。 |
 
 アプリケーション層は`board/`、`sensors/`、`ui/`のAPIへ依存します。ML63Q2557の
@@ -105,12 +106,12 @@ LCDの転送に一度失敗すると、バックライトを消してLCDとI2CF0
 | モジュール | 部品 | 接続・方式 | スナップショットの値 | 単位・有効条件 |
 | --- | --- | --- | --- | --- |
 | `LeafTemperatureSensor` | SEN0206 / MLX90614 | I2CF0、7 bitアドレス`0x5A` | `leafTemperatureCentiC` | 摂氏の100分の1。PECとセンサーエラーフラグを確認する。 |
-| `EnvironmentSensor` | SEN0385 / SHT31 | I2CF0、7 bitアドレス`0x44` | `airTemperatureCentiC`、`relativeHumidityCentiPercent` | 摂氏・相対湿度の100分の1。CRC確認済みのときだけ有効。 |
+| `EnvironmentSensor` | BME280 | I2CF0、7 bitアドレス`0x76`または`0x77` | `airTemperatureCentiC`、`relativeHumidityCentiPercent`、`barometricPressurePa` | 摂氏・相対湿度の100分の1、気圧(Pa)。トリミング補正済みのときだけ有効。 |
 | `EnvironmentSensor` | SEN0228 / VEML7700 | I2CF0、7 bitアドレス`0x10` | `illuminanceCentiLux`、`illuminanceRaw` | 照度の100分の1 luxと生値。初回に設定を書き込む。 |
 | `SoilMoistureSensor` | SEN0193 | ADC0 | `soilMoistureRaw` | 0～4095の相対値。CN6の反転増幅回路に合わせて0を乾燥側、4095を湿潤側とする。水分率ではない。 |
 | `TankLevelSensor` | SEN0204 | CN5 IN0、Lowアクティブ入力 | `tankLiquidDetected` | `true`は液面検出。通信妥当性を示す値ではない。 |
 
-LCDとSEN0206、SEN0385、SEN0228はCN3の同じI2CF0バスを共有します。LCDドライバは
+LCDとSEN0206、BME280、SEN0228はCN3の同じI2CF0バスを共有します。LCDドライバは
 LCD用の転送アドレス`0x7C`を使用し、センサーバスAPIは7 bitアドレスを受け取ります。
 すべてmainコンテキストで同期転送し、バス待機、転送完了、NACKを上限付きで判定します。
 
@@ -136,7 +137,7 @@ LCDは16文字×2行です。文字列は`ui/LcdUi.c`で生成し、短い文字
 
 | ページ | 1行目 | 2行目 | 表示内容 |
 | --- | --- | --- | --- |
-| 0 | `AIR:+25.00C` | `HUM:50.00%` | SEN0385の気温と相対湿度。温度は符号付き摂氏、湿度は百分率。 |
+| 0 | `AIR:+25.00C` | `HUM:50.00%` | BME280の気温と相対湿度。温度は符号付き摂氏、湿度は百分率。 |
 | 1 | `LEAF:+24.50C` | `SOIL:1234` | SEN0206の葉温とSEN0193の土壌水分生値。`SOIL`は未校正の相対値。 |
 | 2 | `LUX:123.45` | `TANK:WET` | SEN0228の照度（lux）とSEN0204の液面検出状態。液面未検出時は`TANK:EMPTY`。 |
 
@@ -161,10 +162,14 @@ LCDは16文字×2行です。文字列は`ui/LcdUi.c`で生成し、短い文字
 
 `ERROR`中はLED1とLED3が同じ位相、LED2が反対位相で250 msごとに交互点滅します。
 
-## 将来拡張の境界
+## 給水制御と将来拡張の境界
 
-`PlantAi`はセンサー値から植物状態を判定する境界、`PumpControl`は給水出力を安全に制御する境界、
-`PlantLog`は時刻付き測定値とイベントを記録する境界です。将来機能はこれらのモジュールを拡張し、
-センサー取得、LCD、基板制御の既存責務を直接混在させません。
+`PumpControl`はCN5 OUT0（P66、Nchオープンドレイン出力）を介してDFR0457/外部12V給水ポンプを
+安全に制御します。1回の最大駆動時間（2.0秒）による自動停止、給水後クールダウン（3.0秒）、
+SW4押下による手動給水・停止トリガー、LCD表示フィードバック、エラー時緊急遮断を提供します。
+
+`PlantAi`はセンサー値から植物状態を判定する境界、`PlantLog`は時刻付き測定値とイベントを記録する
+境界です。将来機能はこれらのモジュールを拡張し、センサー取得、LCD、基板制御、給水制御の既存責務を
+直接混在させません。
 
 実装の優先順位と完了条件は[Plant Doctor 実行計画](../../IMPLEMENTATION_PLAN.md)を参照してください。

@@ -34,8 +34,6 @@ static bool LcdUi_WriteLine(uint8_t position, const char *text) {
 
     status = Lcd_Draw(position, line);
     if (status != LCD_STATUS_OK) {
-        s_ready = false;
-        Lcd_BacklightOff();
         return false;
     }
     return true;
@@ -93,7 +91,16 @@ bool LcdUi_Init(void) {
  * @return 復旧成功時はtrue
  * ================================================================= */
 bool LcdUi_Recover(void) {
-    return LcdUi_Initialize();
+    LCD_STATUS status = Lcd_Init();
+
+    if (status == LCD_STATUS_OK) {
+        status = Lcd_DisplayOnOff(LCD_DISPLAY_ON, LCD_CURSOR_OFF, LCD_CURSOR_BLINK_OFF);
+    }
+    if (status == LCD_STATUS_OK) {
+        Lcd_BacklightOn();
+        s_ready = true;
+    }
+    return s_ready;
 }
 
 /** =================================================================*
@@ -133,6 +140,18 @@ bool LcdUi_ShowSwitch(uint8_t pressedMask) {
     }
 
     return s_ready && LcdUi_WriteLine(LCD_START_OF_SECOND_LINE, message);
+}
+
+/** =================================================================*
+ * @brief  ポンプの動作状態またはメッセージをLCD2行目に表示する。
+ * @param[in] message 表示メッセージ
+ * @return LCD更新成功時はtrue
+ * ================================================================= */
+bool LcdUi_ShowPumpStatus(const char *message) {
+    if ((message == 0) || !s_ready) {
+        return false;
+    }
+    return LcdUi_WriteLine(LCD_START_OF_SECOND_LINE, message);
 }
 
 /** =================================================================*

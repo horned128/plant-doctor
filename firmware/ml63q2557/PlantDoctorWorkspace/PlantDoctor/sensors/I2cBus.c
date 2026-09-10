@@ -6,8 +6,11 @@
 #include <stdbool.h>                                        /* 標準Cの真偽値型 */
 #include <stddef.h>                                         /* 標準CのNULL定義 */
 #include "PlantDoctorConfig.h"                              /* アプリケーション設定 */
+#include "i2cf_common.h"                                    /* I2CFドライバ共通定義 */
+#include "irq.h"                                            /* 割り込み制御API */
 #include "mcu.h"                                            /* ML63Q2557のレジスタ定義 */
 #include "rdwr_reg.h"                                       /* レジスタ操作API */
+#include "smpl_common.h"                                    /* 共通周辺機器制御API */
 #include "wdt.h"                                            /* ウォッチドッグAPI */
 
 #define I2C_STATUS_NACK_MASK               (1UL << 0U)
@@ -21,6 +24,135 @@
 #define I2C_CONTROL_MASTER_MASK            (1UL << 5U)
 #define I2C_CONTROL_CLOCK_HOLD_MASK        (1UL << 13U)
 
+#define I2C_P72_RESET_DISABLE_MASK         (1UL << 2U)
+#define I2C_P73_SCL_MASK                   (1UL << 3U)
+#define I2C_P74_SDA_MASK                   (1UL << 4U)
+#define I2C_P75_BACKLIGHT_MASK             (1UL << 5U)
+
+#define I2C_P7MOD0_SCL_I2C                 (0x2BUL << 24U)
+#define I2C_P7MOD0_SCL_GPIO_OUT            (0x02UL << 24U)
+#define I2C_P7MOD0_SCL_MASK                (0xFFUL << 24U)
+#define I2C_P7MOD0_RESET_GPIO_OUT          (0x02UL << 16U)
+#define I2C_P7MOD0_RESET_MASK              (0xFFUL << 16U)
+
+#define I2C_P7MOD1_SDA_I2C                 (0x2BUL << 0U)
+#define I2C_P7MOD1_SDA_GPIO_IN_PULLUP      (0x01UL << 0U)
+#define I2C_P7MOD1_SDA_GPIO_OUT            (0x02UL << 0U)
+#define I2C_P7MOD1_SDA_MASK                (0xFFUL << 0U)
+#define I2C_P7MOD1_BACKLIGHT_GPIO_OUT      (0x02UL << 8U)
+#define I2C_P7MOD1_BACKLIGHT_MASK          (0xFFUL << 8U)
+
+#define I2C_RATE_STANDARD_100KHZ           (0x3CU)
+
+/** =================================================================*
+ * @brief  数マイクロ秒単位の微小遅延を生成する。
+ * ================================================================= */
+static void I2cBus_DelayShort(void) {
+    volatile uint32_t count = 60UL;
+
+    while (count > 0UL) {
+        --count;
+    }
+}
+
+/** =================================================================*
+ * @brief  転送完了フラグをクリアする。
+ * ================================================================= */
+static void I2cBus_ClearComplete(void) {
+    clear_bit(I2CF0->I2F0SR, I2C_STATUS_CLEAR_MASK);
+}
+
+/** =================================================================*
+ * @brief  I2Cバスのスタック状態を検出し、クロック送出で解放する。
+ * @return バスが解放された場合はtrue
+ * ================================================================= */
+bool I2cBus_Recover(void) {
+    uint8_t pulse;
+    bool recovered = false;
+
+    /* P73(SCL)をHigh出力、P74(SDA)をプルアップ入力へ一時設定 */
+    set_bit(PORT7->P7DO, I2C_P73_SCL_MASK);
+    write_bit(PORT7->P7MOD0, I2C_P7MOD0_SCL_MASK, I2C_P7MOD0_SCL_GPIO_OUT);
+    write_bit(PORT7->P7MOD1, I2C_P7MOD1_SDA_MASK, I2C_P7MOD1_SDA_GPIO_IN_PULLUP);
+    I2cBus_DelayShort();
+
+    /* SDAがHighであればバスはスタックしていない */
+    if ((read_reg32(PORT7->P7DI) & I2C_P74_SDA_MASK) != 0UL) {
+        recovered = true;
+    } else {
+        /* スレーブがSDAをLow固定している場合、SCLへ最大9クロック出力して解放を促す */
+        for (pulse = 0U; pulse < 9U; ++pulse) {
+            clear_bit(PORT7->P7DO, I2C_P73_SCL_MASK);
+            I2cBus_DelayShort();
+            set_bit(PORT7->P7DO, I2C_P73_SCL_MASK);
+            I2cBus_DelayShort();
+            if ((read_reg32(PORT7->P7DI) & I2C_P74_SDA_MASK) != 0UL) {
+                recovered = true;
+                break;
+            }
+        }
+    }
+
+    /* STOP条件をソフトウェア生成してバスを確実にアイドル化 */
+    clear_bit(PORT7->P7DO, I2C_P73_SCL_MASK);
+    clear_bit(PORT7->P7DO, I2C_P74_SDA_MASK);
+    write_bit(PORT7->P7MOD1, I2C_P7MOD1_SDA_MASK, I2C_P7MOD1_SDA_GPIO_OUT);
+    I2cBus_DelayShort();
+    set_bit(PORT7->P7DO, I2C_P73_SCL_MASK);
+    I2cBus_DelayShort();
+    set_bit(PORT7->P7DO, I2C_P74_SDA_MASK);
+    I2cBus_DelayShort();
+    write_bit(PORT7->P7MOD1, I2C_P7MOD1_SDA_MASK, I2C_P7MOD1_SDA_GPIO_IN_PULLUP);
+    I2cBus_DelayShort();
+
+    return recovered;
+}
+
+/** =================================================================*
+ * @brief  I2CF0ペリフェラルおよび関連GPIO端子を初期化する。
+ * @return 初期化成功時はtrue
+ * ================================================================= */
+bool I2cBus_Init(void) {
+    uint32_t interruptState = __get_PRIMASK();
+
+    __disable_irq();
+    irq_i2cf0_dis();
+    smpl_enablePeripheral(I2CF0_PERI);
+
+    /* LCDリセット端子(P72)を出力High(リセット解除)に設定 */
+    set_bit(PORT7->P7DO, I2C_P72_RESET_DISABLE_MASK);
+    write_bit(PORT7->P7MOD0, I2C_P7MOD0_RESET_MASK, I2C_P7MOD0_RESET_GPIO_OUT);
+
+    /* LCDバックライト端子(P75)を出力Low(消灯)に設定 */
+    clear_bit(PORT7->P7DO, I2C_P75_BACKLIGHT_MASK);
+    write_bit(PORT7->P7MOD1, I2C_P7MOD1_BACKLIGHT_MASK, I2C_P7MOD1_BACKLIGHT_GPIO_OUT);
+
+    /* I2Cバス解放（スタックリカバリ）の実行 */
+    (void)I2cBus_Recover();
+
+    /* P73(SCL)およびP74(SDA)をI2CF0機能端子に設定 */
+    write_bit(PORT7->P7MOD0, I2C_P7MOD0_SCL_MASK, I2C_P7MOD0_SCL_I2C);
+    write_bit(PORT7->P7MOD1, I2C_P7MOD1_SDA_MASK, I2C_P7MOD1_SDA_I2C);
+
+    /* I2CF0ハードウェアを標準100kHzモードで初期化 */
+    clear_bit(I2CF0->I2F0CTL, (1UL << 7U));
+    write_reg32(I2CF0->I2F0BC, I2C_RATE_STANDARD_100KHZ);
+    write_reg32(I2CF0->I2F0CTL, ((uint32_t)I2F_MOD_STD | (1UL << 7U)));
+    clear_bit(I2CF0->I2F0MOD, (1UL << 0U));
+    clear_bit(I2CF0->I2F0CTL, (1UL << 12U));
+    clear_bit(I2CF0->I2F0CTL, (1UL << 11U));
+    set_bit(I2CF0->I2F0CTL, (1UL << 9U));
+    clear_bit(I2CF0->I2F0CTL, (1UL << 6U));
+
+    irq_i2cf0_clearIRQ();
+    I2cBus_ClearComplete();
+
+    if (interruptState == 0U) {
+        __enable_irq();
+    }
+    return true;
+}
+
 /** =================================================================*
  * @brief  指定したI2C状態ビットを待機する。
  * @param[in] mask 状態ビットマスク
@@ -28,7 +160,7 @@
  * @return 指定状態になった場合はtrue、タイムアウト時はfalse
  * ================================================================= */
 static bool I2cBus_WaitStatus(uint32_t mask, bool set) {
-    uint32_t remaining = PLANT_DOCTOR_LCD_TIMEOUT_LOOPS;
+    uint32_t remaining = PLANT_DOCTOR_I2C_TIMEOUT_LOOPS;
 
     while (remaining > 0UL) {
         if (get_bit(I2CF0->I2F0SR, mask) == set) {
@@ -42,12 +174,6 @@ static bool I2cBus_WaitStatus(uint32_t mask, bool set) {
     return false;
 }
 
-/** =================================================================*
- * @brief  転送完了フラグをクリアする。
- * ================================================================= */
-static void I2cBus_ClearComplete(void) {
-    clear_bit(I2CF0->I2F0SR, I2C_STATUS_CLEAR_MASK);
-}
 
 /** =================================================================*
  * @brief  I2CバスへSTOP条件を送出し、バス解放を確認する。

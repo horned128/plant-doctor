@@ -12,6 +12,14 @@
 #include "PumpControl.h"                                    /* PumpControlのAPIと型定義 */
 #include "SensorManager.h"                                  /* センサー取得APIとスナップショット型 */
 #include "SwitchControl.h"                                  /* SwitchControlのAPIと型定義 */
+#include "PlantAi.h"                                        /* 植物状態AI・診断API */
+#include "WateringPolicy.h"                                 /* 自律水やり判定ポリシーAPI */
+#include "DemoMode.h"                                       /* デモモード基盤API */
+#include "SoilCalibration.h"                                /* 土壌水分校正変換API */
+#include "TankLevelSensor.h"                                /* タンク液面センサーAPI */
+#include "TimeKeeper.h"                                     /* 時刻管理API */
+#include "PlantLog.h"                                       /* 植物ログ保存API */
+#include <stddef.h>                                         /* NULL定義 */
 
 static APP_STATE s_state;                                   /**< モジュール内部状態 */
 static PLANT_DOCTOR_ERROR s_error;                          /**< モジュール内部状態 */
@@ -33,6 +41,10 @@ static bool s_lcdRecoveryActive;                            /**< LCD復旧処理
 static bool s_lcdRecoveryPending;                           /**< LCD復旧試行要求 */
 static bool s_errorShown;                                   /**< モジュール内部状態 */
 static bool s_errorLedPhase;                                /**< モジュール内部状態 */
+static WATERING_POLICY_STATE s_wateringPolicyState;         /**< 自律水やり状態 */
+static WATERING_POLICY_CONFIG s_wateringPolicyConfig;       /**< 自律水やり設定 */
+static DEMO_MODE_STATE s_demoModeState;                     /**< デモモード状態 */
+static uint32_t s_appTick;                                  /**< 10ms Tickカウンタ */
 
 /** =================================================================*
  * @brief  AppStateMachine_SetState処理
@@ -107,6 +119,17 @@ void AppStateMachine_Init(void) {
     s_pumpUiHoldTicks = 0U;
     s_errorShown = false;
     s_errorLedPhase = false;
+    s_appTick = 0U;
+
+    WateringPolicy_Reset(&s_wateringPolicyState);
+    DemoMode_Reset(&s_demoModeState);
+    TimeKeeper_Init(0xFFFFFFFFUL, false);
+    s_wateringPolicyConfig.dryThresholdPermille = PLANT_DOCTOR_WATERING_DRY_THRESHOLD_PERMILLE;
+    s_wateringPolicyConfig.minIntervalSeconds = PLANT_DOCTOR_WATERING_MIN_INTERVAL_SECONDS;
+    s_wateringPolicyConfig.minIntervalTicks = PLANT_DOCTOR_WATERING_MIN_INTERVAL_TICKS;
+    s_wateringPolicyConfig.maxDailyWateringCount = PLANT_DOCTOR_WATERING_MAX_DAILY_COUNT;
+    s_wateringPolicyConfig.autoWateringEnabled = PLANT_DOCTOR_WATERING_AUTO_ENABLE;
+
     AppStateMachine_SetState(APP_STATE_BOOT);
 }
 
@@ -149,9 +172,21 @@ void AppStateMachine_Process(void) {
                 if (s_pumpUiHoldTicks == 0U) {
                     PLANT_SENSOR_SNAPSHOT snapshot;
 
-                    s_sensorDisplayPending = false;
                     if (SensorManager_GetLatest(&snapshot)) {
-                        if (!LcdUi_ShowSensorPage(&snapshot, s_sensorPage)) {
+                        s_sensorDisplayPending = false;
+                        LCD_DIAGNOSIS_VIEW_DATA diagData;
+                        PLANT_FEATURE_VECTOR feat;
+
+                        PlantAi_GetFeatureVector(&feat);
+                        diagData.stressScore = PlantAi_GetStressScore();
+                        diagData.status = PlantAi_GetStatus();
+                        diagData.failedSensor = PlantAi_GetFailedSensor();
+                        diagData.soilTrend = PlantAi_GetSoilTrend();
+                        diagData.leafAirTemperatureDelta = feat.leafAirTemperatureDelta;
+                        diagData.leafAirDeltaValid = ((feat.validMask & PLANT_FEATURE_VALID_LEAF_AIR_DELTA) != 0U);
+                        diagData.isDemoMode = DemoMode_IsActive(&s_demoModeState);
+
+                        if (!LcdUi_ShowDiagnosisPage(&diagData, &snapshot, s_sensorPage)) {
                             AppStateMachine_StartLcdRecovery();
                         } else {
                             s_lcdRecoveryAttempts = 0U;
@@ -180,10 +215,22 @@ void AppStateMachine_Process(void) {
  * @brief  AppStateMachine_Tick10Ms処理
  * ================================================================= */
 void AppStateMachine_Tick10Ms(void) {
+    PUMP_WATERING_EVENT wateringEvent;
     uint8_t switchMask;
 
     if (s_stateTicks < UINT16_MAX) {
         ++s_stateTicks;
+    }
+    ++s_appTick;
+    TimeKeeper_Tick10Ms();
+
+    /* 給水完了イベントを取り出してAIおよび自律ポリシー、ログへ通知 */
+    if (PumpControl_TakeWateringEvent(&wateringEvent)) {
+        PlantAi_NotifyWatering(&wateringEvent, s_appTick);
+        WateringPolicy_NotifyWateringExecuted(&s_wateringPolicyState,
+                                              wateringEvent.startTimeSeconds,
+                                              s_appTick);
+        PlantLog_NotifyWatering(&wateringEvent);
     }
 
     if (s_state == APP_STATE_MONITOR) {
@@ -219,6 +266,12 @@ void AppStateMachine_Tick10Ms(void) {
         }
 
         switchMask = Board_GetPressedSwitchMask();
+
+        /* SW1 長押し/短押しによるデモモード処理 */
+        DemoMode_ProcessSwitch1Tick(&s_demoModeState,
+                                    (switchMask & SWITCH_CONTROL_PSW1) != 0U,
+                                    PLANT_DOCTOR_DEMO_SW1_HOLD_TICKS);
+
         if (switchMask != s_previousSwitchMask) {
             uint8_t pressedEdge = switchMask & (uint8_t)(~s_previousSwitchMask);
 
@@ -227,22 +280,38 @@ void AppStateMachine_Tick10Ms(void) {
                 if (PumpControl_IsOn()) {
                     (void)PumpControl_Request(false);
                     s_pumpMessage = "PUMP STOPPED";
-                    s_pumpUiHoldTicks = 150U;
+                    s_pumpUiHoldTicks = PLANT_DOCTOR_PUMP_MESSAGE_TICKS;
                 } else {
-                    PUMP_CONTROL_STATUS status = PumpControl_Request(true);
+                    PLANT_SENSOR_SNAPSHOT snapshot;
+                    uint32_t nowSec = 0xFFFFFFFFU;
+                    uint16_t soilRaw = 0U;
+                    int16_t soilPermille = 0;
+                    int16_t leafAirDelta = 0;
+                    PUMP_CONTROL_STATUS status;
+
+                    if (SensorManager_GetLatest(&snapshot)) {
+                        nowSec = snapshot.timestampSeconds;
+                        soilRaw = snapshot.soilMoistureRaw;
+                        soilPermille = SoilCalibration_ToPermille(snapshot.soilMoistureRaw,
+                                                                 PLANT_DOCTOR_SOIL_CAL_DEFAULT_DRY,
+                                                                 PLANT_DOCTOR_SOIL_CAL_DEFAULT_WET);
+                        leafAirDelta = (int16_t)(snapshot.leafTemperatureCentiC - snapshot.airTemperatureCentiC);
+                    }
+                    PumpControl_SetPreWateringContext(nowSec, soilRaw, soilPermille, leafAirDelta, false);
+                    status = PumpControl_Request(true);
 
                     if (status == PUMP_CONTROL_STATUS_OK) {
                         s_pumpMessage = "WATERING 2.0s";
                         s_pumpUiHoldTicks = PLANT_DOCTOR_PUMP_MAX_ON_TICKS;
                     } else if (status == PUMP_CONTROL_STATUS_EMPTY) {
                         s_pumpMessage = "TANK EMPTY!";
-                        s_pumpUiHoldTicks = 150U;
+                        s_pumpUiHoldTicks = PLANT_DOCTOR_PUMP_MESSAGE_TICKS;
                     } else if (status == PUMP_CONTROL_STATUS_COOLDOWN) {
                         s_pumpMessage = "PUMP COOLDOWN";
-                        s_pumpUiHoldTicks = 150U;
+                        s_pumpUiHoldTicks = PLANT_DOCTOR_PUMP_MESSAGE_TICKS;
                     } else {
                         s_pumpMessage = "PUMP ERROR";
-                        s_pumpUiHoldTicks = 150U;
+                        s_pumpUiHoldTicks = PLANT_DOCTOR_PUMP_MESSAGE_TICKS;
                     }
                 }
                 s_pumpMessagePending = true;
@@ -254,6 +323,53 @@ void AppStateMachine_Tick10Ms(void) {
                 s_uiUpdatePending = true;
             }
         }
+
+        /* 自律水やり判定 (給水動作中でなく、UI表示ホールドも解けている場合) */
+        if (!PumpControl_IsOn() && (s_pumpUiHoldTicks == 0U)) {
+            PLANT_SENSOR_SNAPSHOT snapshot;
+            if (SensorManager_GetLatest(&snapshot)) {
+                WATERING_POLICY_INPUT policyInput;
+                int16_t soilPermille = SoilCalibration_ToPermille(
+                    snapshot.soilMoistureRaw,
+                    PLANT_DOCTOR_SOIL_CAL_DEFAULT_DRY,
+                    PLANT_DOCTOR_SOIL_CAL_DEFAULT_WET);
+                SENSOR_HEALTH soilHealth = snapshot.soilMoistureValid ? SENSOR_HEALTH_OK : SENSOR_HEALTH_NO_COMMUNICATION;
+                bool tankLiquid = TankLevelSensor_IsLiquidDetected();
+
+                if (DemoMode_IsActive(&s_demoModeState)) {
+                    DemoMode_ApplyOffsets(&s_demoModeState,
+                                          NULL,
+                                          &soilPermille,
+                                          NULL,
+                                          &tankLiquid,
+                                          &soilHealth);
+                }
+
+                policyInput.plantStatus = PlantAi_GetStatus();
+                policyInput.soilMoisturePermille = soilPermille;
+                policyInput.soilSensorHealth = soilHealth;
+                policyInput.tankLiquidDetected = tankLiquid;
+                policyInput.isMonitoring = (s_state == APP_STATE_MONITOR);
+                policyInput.lastWateringResponse = PlantAi_GetWateringResponse();
+                policyInput.nowSeconds = snapshot.timestampSeconds;
+                policyInput.currentTick = s_appTick;
+
+                if (WateringPolicy_Evaluate(&s_wateringPolicyState, &policyInput, &s_wateringPolicyConfig) == WATERING_DECISION_REQUEST) {
+                    int16_t leafAirDelta = (int16_t)(snapshot.leafTemperatureCentiC - snapshot.airTemperatureCentiC);
+                    PumpControl_SetPreWateringContext(snapshot.timestampSeconds,
+                                                      snapshot.soilMoistureRaw,
+                                                      soilPermille,
+                                                      leafAirDelta,
+                                                      true);
+                    if (PumpControl_Request(true) == PUMP_CONTROL_STATUS_OK) {
+                        s_pumpMessage = "AUTO WATERING";
+                        s_pumpUiHoldTicks = PLANT_DOCTOR_PUMP_MAX_ON_TICKS;
+                        s_pumpMessagePending = true;
+                    }
+                }
+            }
+        }
+
         LedControl_Set(LED_CONTROL_2, (switchMask & 0x03U) != 0U);
         LedControl_Set(LED_CONTROL_3, ((switchMask & SWITCH_CONTROL_PSW3) != 0U) || PumpControl_IsOn());
     } else if (s_state == APP_STATE_ERROR) {
@@ -278,6 +394,7 @@ void AppStateMachine_EnterError(PLANT_DOCTOR_ERROR error) {
     s_errorShown = false;
     s_errorLedPhase = false;
     LedControl_AllOff();
+    PlantLog_NotifyError(error);
     AppStateMachine_SetState(APP_STATE_ERROR);
 }
 
@@ -295,4 +412,19 @@ APP_STATE AppStateMachine_GetState(void) {
  * ================================================================= */
 PLANT_DOCTOR_ERROR AppStateMachine_GetError(void) {
     return s_error;
+}
+
+/** =================================================================*
+ * @brief  AppStateMachine_SetDemoMode処理
+ * @param[in] enable 有効/無効
+ * @return 実行結果
+ * ================================================================= */
+bool AppStateMachine_SetDemoMode(bool enable) {
+    DemoMode_SetActive(&s_demoModeState, enable);
+    if (enable) {
+        DemoMode_SetScenario(&s_demoModeState, DEMO_SCENARIO_1_NORMAL);
+    } else {
+        DemoMode_SetScenario(&s_demoModeState, DEMO_SCENARIO_OFF);
+    }
+    return true;
 }

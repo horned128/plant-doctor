@@ -42,7 +42,31 @@ jobs:
         working-directory: firmware/ml63q2557
         run: cmake --build --preset ${{ matrix.preset }}
 
-      - name: Report size
+      - name: Report size and memory usage
         run: |
+          echo "=== Summary size ==="
           arm-none-eabi-size \
             firmware/ml63q2557/build/${{ matrix.preset }}/PlantDoctor.elf
+          echo "=== Section details (-A) ==="
+          arm-none-eabi-size -A \
+            firmware/ml63q2557/build/${{ matrix.preset }}/PlantDoctor.elf
+          echo "=== Check malloc linkage ==="
+          arm-none-eabi-nm firmware/ml63q2557/build/${{ matrix.preset }}/PlantDoctor.elf | grep -i malloc || echo "malloc not linked"
+          echo "=== Top 20 symbols by size ==="
+          arm-none-eabi-nm --print-size --size-sort --radix=d \
+            firmware/ml63q2557/build/${{ matrix.preset }}/PlantDoctor.elf | tail -n 20
+
+  host-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out Plant Doctor
+        uses: actions/checkout@v4
+
+      - name: Configure host tests
+        run: cmake -S tests/host -B build/host
+
+      - name: Build host tests
+        run: cmake --build build/host
+
+      - name: Run host tests
+        run: ctest --test-dir build/host --output-on-failure

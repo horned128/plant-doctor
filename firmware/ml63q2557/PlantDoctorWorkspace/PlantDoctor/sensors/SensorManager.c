@@ -8,10 +8,14 @@
 #include "SoilMoistureSensor.h"                             /* SoilMoistureSensorのAPIと型定義 */
 #include "TankLevelSensor.h"                                /* TankLevelSensorのAPIと型定義 */
 #include "PlantDoctorConfig.h"                              /* PlantDoctorConfigのAPIと型定義 */
+#include "TimeKeeper.h"                                     /* TimeKeeperのAPIと型定義 */
 
 static PLANT_SENSOR_SNAPSHOT s_latest;                      /**< モジュール内部状態 */
 static uint16_t s_sampleTicks;                              /**< 次回サンプルまでのTick */
 static bool s_samplePending;                                /**< サンプル実行要求 */
+static uint16_t s_sampleSequence;                           /**< サンプル連番カウンタ */
+static uint16_t s_lastTakenSequence;                        /**< 前回取得した連番 */
+static bool s_hasTakenSample;                               /**< サンプル取得済みフラグ */
 
 /** =================================================================*
  * @brief  SensorManager_Init処理
@@ -32,8 +36,13 @@ bool SensorManager_Init(void) {
     s_latest.illuminanceValid = false;
     s_latest.tankLiquidDetected = false;
     s_latest.valid = false;
+    s_latest.timestampSeconds = 0xFFFFFFFFUL;
+    s_latest.sampleSequence = 0U;
     s_sampleTicks = PLANT_DOCTOR_SENSOR_SAMPLE_TICKS;
     s_samplePending = false;
+    s_sampleSequence = 0U;
+    s_lastTakenSequence = 0U;
+    s_hasTakenSample = false;
 
     return SoilMoistureSensor_Init() && LeafTemperatureSensor_Init() &&
         EnvironmentSensor_Init() && TankLevelSensor_Init();
@@ -69,12 +78,16 @@ void SensorManager_Process10Ms(void) {
     s_latest.barometricPressureValid = environment.barometricPressureValid;
     s_latest.illuminanceValid = environment.illuminanceValid;
     s_latest.tankLiquidDetected = TankLevelSensor_IsLiquidDetected();
+    ++s_sampleSequence;
+    s_latest.sampleSequence = s_sampleSequence;
+    s_latest.timestampSeconds = TimeKeeper_GetUnixSeconds();
     /* 未接続センサーは無効値として表示し、起動・他センサーの計測を継続する。 */
     s_latest.valid = true;
 }
+
 /** =================================================================*
  * @brief  SensorManager_GetLatest処理
- * @param[out] snapshot 引数
+ * @param[out] snapshot 最新スナップショット出力先
  * @return 実行結果または取得値
  * ================================================================= */
 bool SensorManager_GetLatest(PLANT_SENSOR_SNAPSHOT *snapshot) {
@@ -84,3 +97,30 @@ bool SensorManager_GetLatest(PLANT_SENSOR_SNAPSHOT *snapshot) {
     *snapshot = s_latest;
     return true;
 }
+
+/** =================================================================*
+ * @brief  新規サンプルのみの取得
+ * @param[out] snapshot 最新スナップショット出力先
+ * @return 新規サンプルが取得できた場合true、未更新ならfalse
+ * ================================================================= */
+bool SensorManager_TakeNewSample(PLANT_SENSOR_SNAPSHOT *snapshot) {
+    if ((snapshot == 0) || !s_latest.valid) {
+        return false;
+    }
+    if (!s_hasTakenSample || (s_latest.sampleSequence != s_lastTakenSequence)) {
+        s_hasTakenSample = true;
+        s_lastTakenSequence = s_latest.sampleSequence;
+        *snapshot = s_latest;
+        return true;
+    }
+    return false;
+}
+
+/** =================================================================*
+ * @brief  最新サンプルのsampleSequence取得
+ * @return 最新サンプルの連番
+ * ================================================================= */
+uint16_t SensorManager_GetSampleSequence(void) {
+    return s_latest.sampleSequence;
+}
+

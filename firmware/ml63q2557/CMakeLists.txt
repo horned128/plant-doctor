@@ -60,23 +60,38 @@ set(PLANT_DOCTOR_SOURCES
   ${PLANT_DOCTOR_DIR}/system_ML63Q25x7.c
   ${PLANT_DOCTOR_DIR}/actuator/PumpControl.c
   ${PLANT_DOCTOR_DIR}/ai/PlantAi.c
+  ${PLANT_DOCTOR_DIR}/ai/PlantDiagnosis.c
   ${PLANT_DOCTOR_DIR}/ai/PlantFeature.c
+  ${PLANT_DOCTOR_DIR}/ai/PlantStress.c
+  ${PLANT_DOCTOR_DIR}/ai/WateringResponse.c
   ${PLANT_DOCTOR_DIR}/app/App.c
   ${PLANT_DOCTOR_DIR}/app/AppStateMachine.c
+  ${PLANT_DOCTOR_DIR}/app/DemoMode.c
+  ${PLANT_DOCTOR_DIR}/app/TimeKeeper.c
+  ${PLANT_DOCTOR_DIR}/app/WateringPolicy.c
   ${PLANT_DOCTOR_DIR}/board/Board.c
   ${PLANT_DOCTOR_DIR}/board/BoardTimer.c
   ${PLANT_DOCTOR_DIR}/board/LedControl.c
   ${PLANT_DOCTOR_DIR}/board/PowerControlAdapter.c
+  ${PLANT_DOCTOR_DIR}/board/RtcRx4111.c
   ${PLANT_DOCTOR_DIR}/board/SwitchControl.c
+  ${PLANT_DOCTOR_DIR}/console/Console.c
+  ${PLANT_DOCTOR_DIR}/console/ConsoleUart.c
   ${PLANT_DOCTOR_DIR}/drivers/Lcd.c
   ${PLANT_DOCTOR_DIR}/drivers/LcdI2cf0.c
   ${PLANT_DOCTOR_DIR}/sensors/EnvironmentSensor.c
   ${PLANT_DOCTOR_DIR}/sensors/I2cBus.c
   ${PLANT_DOCTOR_DIR}/sensors/LeafTemperatureSensor.c
   ${PLANT_DOCTOR_DIR}/sensors/SensorManager.c
+  ${PLANT_DOCTOR_DIR}/sensors/SensorPlausibility.c
+  ${PLANT_DOCTOR_DIR}/sensors/SoilCalibration.c
   ${PLANT_DOCTOR_DIR}/sensors/SoilMoistureSensor.c
   ${PLANT_DOCTOR_DIR}/sensors/TankLevelSensor.c
+  ${PLANT_DOCTOR_DIR}/storage/FramDriver.c
   ${PLANT_DOCTOR_DIR}/storage/PlantLog.c
+  ${PLANT_DOCTOR_DIR}/storage/PlantLogQueue.c
+  ${PLANT_DOCTOR_DIR}/storage/PlantLogRecord.c
+  ${PLANT_DOCTOR_DIR}/storage/PlantLogRing.c
   ${PLANT_DOCTOR_DIR}/ui/LcdUi.c
 )
 
@@ -107,6 +122,7 @@ set(CPU_OPTIONS
   -mcpu=cortex-m0plus
   -mthumb
   -fno-signed-char
+  -fno-short-enums
 )
 
 # The LEXIDE linker file contains the verified ML63Q2557 memory map and code
@@ -127,9 +143,11 @@ function(configure_ml63q2557_firmware target)
     ${PLANT_DOCTOR_DIR}
     ${PLANT_DOCTOR_DIR}/actuator
     ${PLANT_DOCTOR_DIR}/ai
+    ${PLANT_DOCTOR_DIR}/ai/inc
     ${PLANT_DOCTOR_DIR}/app
     ${PLANT_DOCTOR_DIR}/board
     ${PLANT_DOCTOR_DIR}/config
+    ${PLANT_DOCTOR_DIR}/console
     ${PLANT_DOCTOR_DIR}/drivers
     ${PLANT_DOCTOR_DIR}/inc
     ${PLANT_DOCTOR_DIR}/sensors
@@ -145,6 +163,9 @@ function(configure_ml63q2557_firmware target)
   target_compile_definitions(${target} PRIVATE
     ML63Q25x7
     ML63Q2557
+    ODL_MAX_INST_NUM=1
+    ODL_MAX_INPUTS=512
+    ODL_MAX_UNITS=64
     $<$<CONFIG:Debug>:DEBUG>
     $<$<CONFIG:Release>:NDEBUG>
   )
@@ -166,10 +187,16 @@ function(configure_ml63q2557_firmware target)
     --specs=nano.specs
     "-T${GCC_LINKER_SCRIPT}"
     -Wl,--gc-sections
+    -Wl,--no-enum-size-warning
+    -Wl,-z,noexecstack
     -Wl,--print-memory-usage
     "-Wl,-Map=${CMAKE_CURRENT_BINARY_DIR}/${target}.map"
   )
   set_property(TARGET ${target} APPEND PROPERTY LINK_DEPENDS "${LEXIDE_LINKER_SCRIPT}")
+
+  target_link_libraries(${target} PRIVATE
+    "${PLANT_DOCTOR_DIR}/ai/lib/SolistAi_Library_1_512_64.a"
+  )
 
   add_custom_command(TARGET ${target} POST_BUILD
     COMMAND ${CMAKE_OBJCOPY} -O ihex

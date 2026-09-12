@@ -5,7 +5,8 @@
 #ifndef APP_STATE_MACHINE_H
 #define APP_STATE_MACHINE_H
 
-#include "PlantDoctorStatus.h"                              /* PlantDoctorStatusのAPIと型定義 */
+#include <stdbool.h>                        /* 標準Cの真偽値型 */
+#include "PlantDoctorStatus.h"              /* PlantDoctorStatusのAPIと型定義 */
 
 typedef enum {
     APP_STATE_BOOT = 0,
@@ -20,5 +21,6 @@ void AppStateMachine_Tick10Ms(void);                        /* AppStateMachine_T
 void AppStateMachine_EnterError(PLANT_DOCTOR_ERROR error);  /* AppStateMachine_EnterErrorのAPI */
 APP_STATE AppStateMachine_GetState(void);                   /* AppStateMachine_GetStateのAPI */
 PLANT_DOCTOR_ERROR AppStateMachine_GetError(void);          /* AppStateMachine_GetErrorのAPI */
+bool AppStateMachine_SetDemoMode(bool enable);               /* デモモード切替API */
 
 #endif /* APP_STATE_MACHINE_H */

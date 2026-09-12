@@ -23,10 +23,14 @@ typedef struct {
     bool illuminanceValid;
     bool tankLiquidDetected;
     bool valid;
+    uint32_t timestampSeconds;                              /* 取得時UNIX秒(未同期:0xFFFFFFFF) */
+    uint16_t sampleSequence;                                /* サンプル連番 */
 } PLANT_SENSOR_SNAPSHOT;
 
 bool SensorManager_Init(void);                              /* SensorManager_InitのAPI */
 void SensorManager_Process10Ms(void);                       /* SensorManager_Process10MsのAPI */
 bool SensorManager_GetLatest(PLANT_SENSOR_SNAPSHOT *snapshot); /* SensorManager_GetLatestのAPI */
+bool SensorManager_TakeNewSample(PLANT_SENSOR_SNAPSHOT *snapshot); /* 新規サンプルのみ取得 */
+uint16_t SensorManager_GetSampleSequence(void);             /* 最新サンプルの連番取得 */
 
 #endif /* SENSOR_MANAGER_H */

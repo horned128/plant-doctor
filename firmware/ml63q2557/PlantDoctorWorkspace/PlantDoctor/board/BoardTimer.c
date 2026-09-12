@@ -15,6 +15,7 @@
 
 static volatile uint8_t s_pendingTicks;                     /**< モジュール内部状態 */
 static volatile bool s_tickOverflow;                        /**< モジュール内部状態 */
+static volatile uint8_t s_maxPendingTicks;                  /**< 観測された最大未処理tick数 */
 
 /** =================================================================*
  * @brief  BoardTimer_WaitUntilRunning処理
@@ -46,6 +47,7 @@ bool BoardTimer_Init(void) {
     timer0_setCnt((uint16_t)BOARD_TIMER_COUNT_VALUE);
     s_pendingTicks = 0U;
     s_tickOverflow = false;
+    s_maxPendingTicks = 0U;
     irq_tm0_setLevel(1U);
     irq_tm0_ena();
     timer0_start();
@@ -95,11 +97,44 @@ bool BoardTimer_TakeOverflow(void) {
 }
 
 /** =================================================================*
+ * @brief  観測された最大未処理tick数の取得
+ * @return 観測された最大未処理tick数
+ * ================================================================= */
+uint8_t BoardTimer_GetMaxPendingTicks(void) {
+    uint8_t maxPending;
+    uint32_t interruptState = __get_PRIMASK();
+
+    __disable_irq();
+    maxPending = s_maxPendingTicks;
+    if (interruptState == 0U) {
+        __enable_irq();
+    }
+
+    return maxPending;
+}
+
+/** =================================================================*
+ * @brief  最大未処理tick数の記録をクリア
+ * ================================================================= */
+void BoardTimer_ClearMaxPendingTicks(void) {
+    uint32_t interruptState = __get_PRIMASK();
+
+    __disable_irq();
+    s_maxPendingTicks = 0U;
+    if (interruptState == 0U) {
+        __enable_irq();
+    }
+}
+
+/** =================================================================*
  * @brief  TM0_IRQHandler処理
  * ================================================================= */
 void TM0_IRQHandler(void) {
     if (s_pendingTicks < UINT8_MAX) {
         ++s_pendingTicks;
+        if (s_pendingTicks > s_maxPendingTicks) {
+            s_maxPendingTicks = s_pendingTicks;
+        }
     } else {
         s_tickOverflow = true;
     }

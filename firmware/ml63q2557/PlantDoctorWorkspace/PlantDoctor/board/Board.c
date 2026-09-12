@@ -12,6 +12,8 @@
 #include "mcu.h"                                            /* ML63Q2557のレジスタ定義 */
 #include "smpl_common.h"                                    /* 共通周辺機器制御API */
 #include "wdt.h"                                            /* ウォッチドッグAPI */
+#include "SoftSpi.h"                                        /* ソフトウェアSPI制御API */
+#include "FramDriver.h"                                     /* FeRAMドライバAPI */
 
 /** =================================================================*
  * @brief  Board_Init処理
@@ -29,6 +31,8 @@ PLANT_DOCTOR_ERROR Board_Init(void) {
     if (!PowerControlAdapter_Init()) {
         error = PLANT_DOCTOR_ERROR_POWER;
     }
+    SoftSpiPeripheralInit();
+    FramDriver_Init();
     LedControl_Init();
     if (!SwitchControl_Init() && (error == PLANT_DOCTOR_ERROR_NONE)) {
         error = PLANT_DOCTOR_ERROR_SWITCH;
@@ -88,3 +92,19 @@ bool Board_IsPowerHeld(void) {
 void Board_ServiceWatchdog(void) {
     wdt_clear();
 }
+
+/** =================================================================*
+ * @brief  Board_GetMaxPendingTicks処理
+ * @return 実行結果または取得値
+ * ================================================================= */
+uint8_t Board_GetMaxPendingTicks(void) {
+    return BoardTimer_GetMaxPendingTicks();
+}
+
+/** =================================================================*
+ * @brief  Board_ClearMaxPendingTicks処理
+ * ================================================================= */
+void Board_ClearMaxPendingTicks(void) {
+    BoardTimer_ClearMaxPendingTicks();
+}
+

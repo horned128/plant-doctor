@@ -11,10 +11,13 @@
 
 /** =================================================================*
  * @brief  SEN0204用のCN5 IN0入力を設定する。
+ * @note   P6MOD1のP64 (bit 0-3) およびP65 (bit 8-11) を設定する。
+ *         PumpControl_Init() が設定するP66 (bit 16-21) とは独立しており、
+ *         App_Init() における初期化順序に依存しない。
  * @return 初期化成功時はtrue
  * ================================================================= */
 bool TankLevelSensor_Init(void) {
-    set_reg32(PORT6->P6MOD1, PHOTO_COUPLER_INPUT_CONFIG);
+    write_bit(PORT6->P6MOD1, ((0x0FUL << 8U) | (0x0FUL << 0U)), PHOTO_COUPLER_INPUT_CONFIG);
     return true;
 }
 

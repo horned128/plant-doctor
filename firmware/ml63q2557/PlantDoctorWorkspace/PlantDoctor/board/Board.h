@@ -16,5 +16,7 @@ bool Board_TakeTickOverflow(void);                          /* Board_TakeTickOve
 uint8_t Board_GetPressedSwitchMask(void);                   /* Board_GetPressedSwitchMaskのAPI */
 bool Board_IsPowerHeld(void);                               /* Board_IsPowerHeldのAPI */
 void Board_ServiceWatchdog(void);                           /* Board_ServiceWatchdogのAPI */
+uint8_t Board_GetMaxPendingTicks(void);                     /* 観測された最大未処理tick数取得 */
+void Board_ClearMaxPendingTicks(void);                      /* 最大未処理tick数記録クリア */
 
 #endif /* BOARD_H */

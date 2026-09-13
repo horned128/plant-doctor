@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plant Doctor - Edge AI Monitoring Dashboard</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .gauge-dial {
+            stroke-dasharray: 251.2;
+            transition: stroke-dashoffset 0.8s ease-in-out;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen font-sans">
+    <div class="max-w-7xl mx-auto px-4 py-6">
+        <!-- Header -->
+        <header class="flex flex-col md:flex-row justify-between items-center pb-6 border-b border-slate-800 mb-6 gap-4">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-2xl">
+                    🌱
+                </div>
+                <div>
+                    <h1 class="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
+                        Plant Doctor
+                        <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800">Edge AI</span>
+                    </h1>
+                    <p class="text-sm text-slate-400">DT-EBML63Q2557 (Solist-AI™) &times; ATOMS3 Lite Gateway</p>
+                </div>
+            </div>
+            
+            <div class="flex items-center space-x-3">
+                <div class="flex items-center space-x-2 bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700 text-sm">
+                    <span id="conn-dot" class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
+                    <span id="conn-text" class="text-slate-300">Connecting...</span>
+                </div>
+                <div class="flex items-center space-x-2 bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700 text-sm">
+                    <span class="text-slate-400 text-xs font-medium">DT-EBML:</span>
+                    <span id="ebml-dot" class="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse"></span>
+                    <span id="ebml-text" class="text-xs font-semibold text-rose-400">未接続</span>
+                </div>
+                <button id="sync-time-btn" onclick="syncTime()" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-lg border border-slate-700 transition">
+                    🕒 時刻同期
+                </button>
+            </div>
+        </header>
+
+
+        <!-- Main Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6 mb-6">
+            <!-- Stress Meter Card -->
+            <div class="bg-slate-800/60 rounded-2xl p-6 border border-slate-700/60 backdrop-blur-sm flex flex-col items-center justify-center relative overflow-hidden">
+                <div class="absolute top-4 left-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                    植物ストレス度
+                </div>
+                <div class="relative w-44 h-44 flex items-center justify-center my-2">
+                    <svg class="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                        <circle cx="50" cy="50" r="40" stroke="currentColor" stroke-width="8" class="text-slate-700/50 fill-none" />
+                        <circle id="stress-arc" cx="50" cy="50" r="40" stroke="#10b981" stroke-width="8" class="gauge-dial fill-none" stroke-linecap="round" stroke-dashoffset="200" />
+                    </svg>
+                    <div class="absolute flex flex-col items-center">
+                        <span id="stress-val" class="text-4xl font-extrabold text-white">--</span>
+                        <span class="text-xs text-slate-400 font-medium">/ 100</span>
+                    </div>
+                </div>
+                <div id="stress-label" class="text-sm font-semibold px-3 py-1 rounded-full bg-emerald-950/80 text-emerald-400 border border-emerald-800">
+                    平常・安定
+                </div>
+            </div>
+
+            <!-- Diagnosis Status Card -->
+            <div class="bg-slate-800/60 rounded-2xl p-6 border border-slate-700/60 backdrop-blur-sm flex flex-col justify-between">
+                <div>
+                    <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">AI 診断ステータス</div>
+                    <div id="status-val" class="text-2xl font-bold text-white mb-2">HEALTHY</div>
+                    <div id="status-desc" class="text-xs text-slate-400">平常状態を維持しています。蒸散・吸水ともに正常です。</div>
+                </div>
+                <div class="pt-4 border-t border-slate-700/50 flex justify-between items-center text-xs">
+                    <span class="text-slate-400">土壌トレンド:</span>
+                    <span id="soil-trend-val" class="font-bold text-sky-400">STABLE</span>
+                </div>
+            </div>
+
+            <!-- Environment Quick View -->
+            <div class="bg-slate-800/60 rounded-2xl p-6 border border-slate-700/60 backdrop-blur-sm space-y-4">
+                <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider">温度・蒸散バランス</div>
+                <div class="flex justify-between items-baseline">
+                    <span class="text-slate-400 text-sm">気温 / 湿度</span>
+                    <span class="text-lg font-bold text-white"><span id="air-temp">--</span> &deg;C / <span id="humidity">--</span>%</span>
+                </div>
+                <div class="flex justify-between items-baseline">
+                    <span class="text-slate-400 text-sm">葉温</span>
+                    <span class="text-lg font-bold text-emerald-400"><span id="leaf-temp">--</span> &deg;C</span>
+                </div>
+                <div class="flex justify-between items-baseline pt-2 border-t border-slate-700/50">
+                    <span class="text-slate-400 text-sm">葉温&minus;気温差 (&Delta;T)</span>
+                    <span id="leaf-diff" class="text-lg font-bold text-sky-400">-- &deg;C</span>
+                </div>
+            </div>
+
+            <!-- Water & Safety Control Card -->
+            <div class="bg-slate-800/60 rounded-2xl p-6 border border-slate-700/60 backdrop-blur-sm flex flex-col justify-between">
+                <div>
+                    <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">給水・タンク状態</div>
+                    <div class="flex items-center space-x-2 my-2">
+                        <span id="tank-badge" class="px-2.5 py-1 rounded text-xs font-bold bg-emerald-950 text-emerald-400 border border-emerald-800">
+                            タンク満水
+                        </span>
+                        <span id="pump-badge" class="px-2.5 py-1 rounded text-xs font-bold bg-slate-700 text-slate-300">
+                            ポンプ停止
+                        </span>
+                    </div>
+                    <div class="text-xs text-slate-400 mt-2">
+                        土壌水分: <span id="soil-raw" class="font-bold text-white">--</span> (Raw)
+                    </div>
+                </div>
+
+                <div class="space-y-2 pt-4">
+                    <button id="water-btn" onclick="triggerWatering()" class="w-full bg-sky-600 hover:bg-sky-500 text-white font-semibold py-2 px-4 rounded-xl shadow-lg transition flex items-center justify-center space-x-2">
+                        <span>💧 手動給水テスト</span>
+                    </button>
+                    <div class="flex items-center justify-between text-xs text-slate-400 pt-1">
+                        <span>デモモード</span>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="demo-toggle" onchange="toggleDemo(this.checked)" class="sr-only peer">
+                            <div class="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Charts Section -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Temp Chart -->
+            <div class="bg-slate-800/60 rounded-2xl p-6 border border-slate-700/60">
+                <h3 class="text-sm font-semibold text-slate-300 mb-4">気温・葉温リアルタイム推移 (&deg;C)</h3>
+                <div class="h-64">
+                    <canvas id="tempChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Soil & Lux Chart -->
+            <div class="bg-slate-800/60 rounded-2xl p-6 border border-slate-700/60">
+                <h3 class="text-sm font-semibold text-slate-300 mb-4">土壌水分 &middot; 照度推移</h3>
+                <div class="h-64">
+                    <canvas id="soilChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let ws;
+        const maxDataPoints = 30;
+        const timeLabels = [];
+        const airTempData = [];
+        const leafTempData = [];
+        const soilData = [];
+
+        /* Chart initialization */
+        const ctxTemp = document.getElementById('tempChart').getContext('2d');
+        const tempChart = new Chart(ctxTemp, {
+            type: 'line',
+            data: {
+                labels: timeLabels,
+                datasets: [
+                    { label: '葉温', borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.1)', data: leafTempData, tension: 0.3, fill: true },
+                    { label: '気温', borderColor: '#38bdf8', backgroundColor: 'transparent', borderDash: [4, 4], data: airTempData, tension: 0.3 }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8', maxRotation: 0 } },
+                    y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } }
+                }
+            }
+        });
+
+        const ctxSoil = document.getElementById('soilChart').getContext('2d');
+        const soilChart = new Chart(ctxSoil, {
+            type: 'line',
+            data: {
+                labels: timeLabels,
+                datasets: [
+                    { label: '土壌水分 (Raw)', borderColor: '#0ea5e9', backgroundColor: 'rgba(14, 165, 233, 0.1)', data: soilData, tension: 0.3, fill: true }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8', maxRotation: 0 } },
+                    y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } }
+                }
+            }
+        });
+
+        function connectWebSocket() {
+            const host = window.location.host || 'plant-doctor.local';
+            const wsUrl = `ws://${host}/ws`;
+
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                document.getElementById('conn-dot').className = 'w-2.5 h-2.5 rounded-full bg-emerald-400';
+                document.getElementById('conn-text').textContent = 'Live Connected';
+            };
+
+            ws.onclose = () => {
+                document.getElementById('conn-dot').className = 'w-2.5 h-2.5 rounded-full bg-rose-400 animate-pulse';
+                document.getElementById('conn-text').textContent = 'Disconnected (Reconnecting...)';
+                setTimeout(connectWebSocket, 2000);
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.type === 'telemetry') {
+                        updateUI(data);
+                    }
+                } catch (e) {
+                    console.error('Error parsing telemetry JSON:', e);
+                }
+            };
+        }
+
+        function updateUI(d) {
+            /* Stress Gauge */
+            const stress = d.stress || 0;
+            document.getElementById('stress-val').textContent = stress;
+            const arc = document.getElementById('stress-arc');
+            const circumference = 251.2;
+            const offset = circumference - (stress / 100) * circumference;
+            arc.style.strokeDashoffset = offset;
+
+            const stressLabel = document.getElementById('stress-label');
+            if (stress < 30) {
+                arc.setAttribute('stroke', '#10b981');
+                stressLabel.className = 'text-sm font-semibold px-3 py-1 rounded-full bg-emerald-950/80 text-emerald-400 border border-emerald-800';
+                stressLabel.textContent = '平常・安定';
+            } else if (stress < 65) {
+                arc.setAttribute('stroke', '#f59e0b');
+                stressLabel.className = 'text-sm font-semibold px-3 py-1 rounded-full bg-amber-950/80 text-amber-400 border border-amber-800';
+                stressLabel.textContent = '軽度ストレス';
+            } else {
+                arc.setAttribute('stroke', '#ef4444');
+                stressLabel.className = 'text-sm font-semibold px-3 py-1 rounded-full bg-rose-950/80 text-rose-400 border border-rose-800';
+                stressLabel.textContent = '高ストレス警告';
+            }
+
+            /* Status */
+            document.getElementById('status-val').textContent = d.status || '--';
+            document.getElementById('soil-trend-val').textContent = d.soil_trend || 'STABLE';
+
+            /* Sensors */
+            document.getElementById('air-temp').textContent = d.air_temp !== undefined ? d.air_temp.toFixed(1) : '--';
+            document.getElementById('humidity').textContent = d.humidity !== undefined ? d.humidity.toFixed(0) : '--';
+            document.getElementById('leaf-temp').textContent = d.leaf_temp !== undefined ? d.leaf_temp.toFixed(1) : '--';
+            
+            const diff = d.leaf_air_diff !== undefined ? (d.leaf_air_diff >= 0 ? '+' : '') + d.leaf_air_diff.toFixed(2) : '--';
+            document.getElementById('leaf-diff').textContent = diff;
+            document.getElementById('soil-raw').textContent = d.soil_raw !== undefined ? d.soil_raw : '--';
+
+            /* Tank & Pump */
+            const tankBadge = document.getElementById('tank-badge');
+            if (d.tank_liquid) {
+                tankBadge.className = 'px-2.5 py-1 rounded text-xs font-bold bg-emerald-950 text-emerald-400 border border-emerald-800';
+                tankBadge.textContent = 'タンク満水';
+            } else {
+                tankBadge.className = 'px-2.5 py-1 rounded text-xs font-bold bg-rose-950 text-rose-400 border border-rose-800';
+                tankBadge.textContent = 'タンク空 (給水不可)';
+            }
+
+            const pumpBadge = document.getElementById('pump-badge');
+            if (d.pump_on) {
+                pumpBadge.className = 'px-2.5 py-1 rounded text-xs font-bold bg-sky-950 text-sky-400 border border-sky-800 animate-pulse';
+                pumpBadge.textContent = '💧 給水中 (ON)';
+            } else {
+                pumpBadge.className = 'px-2.5 py-1 rounded text-xs font-bold bg-slate-700 text-slate-300';
+                pumpBadge.textContent = 'ポンプ停止';
+            }
+
+            document.getElementById('demo-toggle').checked = !!d.demo_mode;
+
+            /* DT-EBML Connection Badge */
+            const ebmlDot = document.getElementById('ebml-dot');
+            const ebmlText = document.getElementById('ebml-text');
+            if (ebmlDot && ebmlText) {
+                if (d.ebml_connected) {
+                    ebmlDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400';
+                    ebmlText.className = 'text-xs font-semibold text-emerald-400';
+                    ebmlText.textContent = d.conn_type ? '接続中 (' + d.conn_type + ')' : '接続中 (I2C)';
+                } else {
+                    ebmlDot.className = 'w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse';
+                    ebmlText.className = 'text-xs font-semibold text-rose-400';
+                    ebmlText.textContent = '未接続';
+                }
+            }
+
+            /* Update Charts */
+
+            const now = new Date();
+            const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+            
+            if (timeLabels.length >= maxDataPoints) {
+                timeLabels.shift();
+                airTempData.shift();
+                leafTempData.shift();
+                soilData.shift();
+            }
+
+            timeLabels.push(timeStr);
+            airTempData.push(d.air_temp);
+            leafTempData.push(d.leaf_temp);
+            soilData.push(d.soil_raw);
+
+            tempChart.update('none');
+            soilChart.update('none');
+        }
+
+        function triggerWatering() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send('water');
+            } else {
+                fetch('/api/water', { method: 'POST' });
+            }
+        }
+
+        function toggleDemo(enable) {
+            const cmd = enable ? 'demo_on' : 'demo_off';
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(cmd);
+            } else {
+                fetch(`/api/demo?enable=${enable ? 1 : 0}`, { method: 'POST' });
+            }
+        }
+
+        function syncTime() {
+            const unix = Math.floor(Date.now() / 1000);
+            fetch('/api/time', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ unix: unix })
+            }).then(() => alert('PCの時刻と同期しました。'));
+        }
+
+        window.onload = connectWebSocket;
+    </script>
+</body>
+</html>

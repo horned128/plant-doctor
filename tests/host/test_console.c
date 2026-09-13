@@ -99,6 +99,17 @@ static bool Mock_ReadRecord(uint16_t index, PLANT_LOG_RECORD *record) {
     return true;
 }
 
+static uint8_t s_mockWateringStatus = 0U;
+static bool s_mockPumpOn = false;
+
+static uint8_t Mock_TriggerWatering(void) {
+    return s_mockWateringStatus;
+}
+
+static bool Mock_IsPumpOn(void) {
+    return s_mockPumpOn;
+}
+
 static CONSOLE_SERVICES s_testServices = {
     .getRecordCount = Mock_GetRecordCount,
     .readRecord = Mock_ReadRecord,
@@ -110,7 +121,9 @@ static CONSOLE_SERVICES s_testServices = {
     .getCalibration = Mock_GetCalibration,
     .setCalibration = Mock_SetCalibration,
     .getMaxPendingTicks = Mock_GetMaxPendingTicks,
-    .setDemoMode = Mock_SetDemoMode
+    .setDemoMode = Mock_SetDemoMode,
+    .triggerWatering = Mock_TriggerWatering,
+    .isPumpOn = Mock_IsPumpOn
 };
 
 /* ================================================================= */
@@ -363,6 +376,43 @@ static void test_streaming_overflow(void) {
     TEST_ASSERT_TRUE(strstr(line, "OK build=PlantDoctor") != NULL);
 }
 
+static void test_watering_commands(void) {
+    char resp[128];
+    bool ok;
+
+    Console_Init(&s_testServices);
+
+    /* Test W? when pump is off */
+    s_mockPumpOn = false;
+    ok = Console_ExecuteCommand("W?", resp, sizeof(resp));
+    TEST_ASSERT_TRUE(ok);
+    TEST_ASSERT_TRUE(strstr(resp, "OK pump=0") != NULL);
+
+    /* Test W? when pump is on */
+    s_mockPumpOn = true;
+    ok = Console_ExecuteCommand("W?", resp, sizeof(resp));
+    TEST_ASSERT_TRUE(ok);
+    TEST_ASSERT_TRUE(strstr(resp, "OK pump=1") != NULL);
+
+    /* Test W with OK */
+    s_mockWateringStatus = 0U;
+    ok = Console_ExecuteCommand("W", resp, sizeof(resp));
+    TEST_ASSERT_TRUE(ok);
+    TEST_ASSERT_TRUE(strstr(resp, "OK watering_started") != NULL);
+
+    /* Test W with tank empty */
+    s_mockWateringStatus = 1U;
+    ok = Console_ExecuteCommand("W", resp, sizeof(resp));
+    TEST_ASSERT_FALSE(ok);
+    TEST_ASSERT_TRUE(strstr(resp, "ERR tank_empty") != NULL);
+
+    /* Test W with cooldown */
+    s_mockWateringStatus = 2U;
+    ok = Console_ExecuteCommand("W", resp, sizeof(resp));
+    TEST_ASSERT_FALSE(ok);
+    TEST_ASSERT_TRUE(strstr(resp, "ERR cooldown") != NULL);
+}
+
 int main(void) {
     TEST_RUN(test_version_command);
     TEST_RUN(test_sensor_command);
@@ -371,6 +421,7 @@ int main(void) {
     TEST_RUN(test_calibration_commands);
     TEST_RUN(test_erase_commands);
     TEST_RUN(test_demo_mode_commands);
+    TEST_RUN(test_watering_commands);
     TEST_RUN(test_streaming_dump);
     TEST_RUN(test_streaming_overflow);
 

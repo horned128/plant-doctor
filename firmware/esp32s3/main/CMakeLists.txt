@@ -1,0 +1,24 @@
+idf_component_register(
+    SRCS
+        "main.c"
+        "usb_host_ftdi.c"
+        "ebml_client.c"
+        "ebml_i2c_slave.c"
+        "wifi_manager.c"
+        "web_server.c"
+        "led_indicator.c"
+    INCLUDE_DIRS
+        "."
+    REQUIRES
+        esp_wifi
+        esp_event
+        esp_netif
+        esp_http_server
+        nvs_flash
+        driver
+        mdns
+        usb_host_vcp
+        usb_host_ftdi_vcp
+        usb_host_cdc_acm
+)
+

@@ -95,6 +95,86 @@
       },
       "dependsOn": "Build: Debug",
       "problemMatcher": []
+    },
+    {
+      "label": "Build: ATOMS3 Lite (PlatformIO)",
+      "type": "process",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}/firmware/esp32s3/scripts/build.ps1"
+      ],
+      "osx": {
+        "command": "/bin/bash",
+        "args": [
+          "${workspaceFolder}/firmware/esp32s3/scripts/build.sh"
+        ]
+      },
+      "group": "build",
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "Flash: ATOMS3 Lite (PlatformIO)",
+      "type": "process",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}/firmware/esp32s3/scripts/flash.ps1"
+      ],
+      "osx": {
+        "command": "/bin/bash",
+        "args": [
+          "${workspaceFolder}/firmware/esp32s3/scripts/flash.sh"
+        ]
+      },
+      "dependsOn": "Build: ATOMS3 Lite (PlatformIO)",
+      "problemMatcher": []
+    },
+    {
+      "label": "Monitor: ATOMS3 Lite (PlatformIO)",
+      "type": "process",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}/firmware/esp32s3/scripts/monitor.ps1"
+      ],
+      "osx": {
+        "command": "/bin/bash",
+        "args": [
+          "${workspaceFolder}/firmware/esp32s3/scripts/monitor.sh"
+        ]
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Flash & Monitor: ATOMS3 Lite (PlatformIO)",
+      "type": "process",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "& '${workspaceFolder}/firmware/esp32s3/scripts/flash.ps1'; & '${workspaceFolder}/firmware/esp32s3/scripts/monitor.ps1'"
+      ],
+      "osx": {
+        "command": "/bin/bash",
+        "args": [
+          "-c",
+          "'${workspaceFolder}/firmware/esp32s3/scripts/flash.sh' && '${workspaceFolder}/firmware/esp32s3/scripts/monitor.sh'"
+        ]
+      },
+      "dependsOn": "Build: ATOMS3 Lite (PlatformIO)",
+      "problemMatcher": []
     }
   ]
 }

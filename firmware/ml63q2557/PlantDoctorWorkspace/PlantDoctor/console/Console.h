@@ -31,6 +31,8 @@ typedef struct {
     bool (*setCalibration)(uint16_t dry, uint16_t wet);      /* 校正値設定 */
     uint8_t (*getMaxPendingTicks)(void);                     /* 最大未処理tick数取得 */
     bool (*setDemoMode)(bool enable);                        /* デモモード切替（P8-1） */
+    uint8_t (*triggerWatering)(void);                        /* 給水要求 (0:OK, 1:EMPTY, 2:COOLDOWN, 3:ERR) */
+    bool (*isPumpOn)(void);                                  /* ポンプ動作状態取得 */
 } CONSOLE_SERVICES;
 
 void Console_Init(const CONSOLE_SERVICES *services);

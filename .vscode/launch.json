@@ -42,6 +42,15 @@
         ],
         "showDevDebugOutput": "both"
       }
+    },
+    {
+      "type": "platformio-debug",
+      "request": "launch",
+      "name": "ATOMS3 Lite: PlatformIO Debug",
+      "executable": "${workspaceFolder}/firmware/esp32s3/.pio/build/atoms3-lite/firmware.elf",
+      "projectEnvName": "atoms3-lite",
+      "preLaunchTask": "Build: ATOMS3 Lite (PlatformIO)",
+      "internalConsoleOptions": "openOnSessionStart"
     }
   ]
 }

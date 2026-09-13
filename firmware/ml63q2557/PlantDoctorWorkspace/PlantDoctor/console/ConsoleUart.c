@@ -10,6 +10,8 @@
 #include "smpl_common.h"
 #include "uartf1.h"
 #include "uartf_common.h"
+#include "mcu.h"
+#include "rdwr_reg.h"
 
 /** =================================================================*
  * @brief  ConsoleUart_Init処理
@@ -23,6 +25,14 @@ bool ConsoleUart_Init(const CONSOLE_SERVICES *services) {
 
     /* UARTF1ペリフェラルクロック供給有効化 */
     smpl_enablePeripheral(UAF1_PERI);
+
+    /*
+     * P70: RXDF1 (0x21), P71: TXDF1 (0x22)
+     * DT-EBML63Q2557のFT2232H(Channel B) / CN9(USB Type-C)に接続される物理端子機能を設定 (下位16bit)
+     * 上位16bit (P72: リセット, P73: I2C SCL) には影響を与えないようマスク指定
+     */
+    write_bit(PORT7->P7MOD0, 0x0000FFFFUL, (0x22UL << 8U) | (0x21UL << 0U));
+
 
     /*
      * ボーレート設定計算根拠:

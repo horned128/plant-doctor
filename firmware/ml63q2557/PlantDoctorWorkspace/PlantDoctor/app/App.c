@@ -13,6 +13,7 @@
 #include "TimeKeeper.h"                                     /* TimeKeeperのAPIと型定義 */
 #include "SoilCalibration.h"                                /* SoilCalibrationのAPIと型定義 */
 #include "RtcRx4111.h"                                      /* RTC (RX4111CE) のAPIと型定義 */
+#include "EbmlI2cTelemetry.h"                               /* ATOMS3 Lite向けI2Cテレメトリ送信 */
 #include <stddef.h>                                         /* NULL定義 */
 
 /** =================================================================*
@@ -51,6 +52,10 @@ static bool App_GetCalibrationCallback(uint16_t *dry, uint16_t *wet) {
     return true;
 }
 
+static uint8_t App_TriggerWateringCallback(void) {
+    return (uint8_t)PumpControl_Request(true);
+}
+
 static const CONSOLE_SERVICES s_consoleServices = {
     .getRecordCount = PlantLog_GetRecordCount,
     .readRecord = PlantLog_ReadRecord,
@@ -62,7 +67,9 @@ static const CONSOLE_SERVICES s_consoleServices = {
     .getCalibration = App_GetCalibrationCallback,
     .setCalibration = SoilCalibration_Set,
     .getMaxPendingTicks = Board_GetMaxPendingTicks,
-    .setDemoMode = AppStateMachine_SetDemoMode
+    .setDemoMode = AppStateMachine_SetDemoMode,
+    .triggerWatering = App_TriggerWateringCallback,
+    .isPumpOn = PumpControl_IsOn
 };
 
 /** =================================================================*
@@ -93,6 +100,7 @@ void App_Init(void) {
         AppStateMachine_EnterError(PLANT_DOCTOR_ERROR_STORAGE_INTERFACE);
     }
     (void)ConsoleUart_Init(&s_consoleServices);
+    (void)EbmlI2cTelemetry_Init();
 }
 
 /** =================================================================*
@@ -112,6 +120,7 @@ void App_RunOnce(void) {
         if (AppStateMachine_GetState() != APP_STATE_ERROR) {
             SensorManager_Process10Ms();
             PlantAi_Process10Ms();
+            EbmlI2cTelemetry_Process10Ms();
         }
         PumpControl_Process10Ms();
         PlantLog_Process10Ms();

@@ -81,6 +81,7 @@ set(PLANT_DOCTOR_SOURCES
   ${PLANT_DOCTOR_DIR}/drivers/LcdI2cf0.c
   ${PLANT_DOCTOR_DIR}/sensors/EnvironmentSensor.c
   ${PLANT_DOCTOR_DIR}/sensors/I2cBus.c
+  ${PLANT_DOCTOR_DIR}/sensors/EbmlI2cTelemetry.c
   ${PLANT_DOCTOR_DIR}/sensors/LeafTemperatureSensor.c
   ${PLANT_DOCTOR_DIR}/sensors/SensorManager.c
   ${PLANT_DOCTOR_DIR}/sensors/SensorPlausibility.c

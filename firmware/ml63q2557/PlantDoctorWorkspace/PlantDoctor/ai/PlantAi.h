@@ -24,5 +24,10 @@ void PlantAi_NotifyWatering(const PUMP_WATERING_EVENT *event, uint32_t currentTi
 WATERING_RESPONSE PlantAi_GetWateringResponse(void);        /* 最新給水応答結果の取得 */
 void PlantAi_ClearWateringFailure(void);                    /* 給水失敗状態の手動解除 */
 
+/* Solist-AI™ オンデバイス学習ステータス取得 */
+uint32_t PlantAi_GetSolistTrainCount(void);                 /* 累積オンデバイス学習ステップ数 */
+uint16_t PlantAi_GetSolistLossPpm(void);                    /* 最新再構成損失 (0.0001〜1.0000 を 1〜10000 で表現) */
+uint8_t PlantAi_GetSolistPhase(void);                       /* 学習フェーズ: 0:Profiling, 1:Stabilizing, 2:Monitoring */
+
 #endif /* PLANT_AI_H */
 

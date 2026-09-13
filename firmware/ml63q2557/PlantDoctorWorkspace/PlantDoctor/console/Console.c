@@ -418,6 +418,37 @@ bool Console_ExecuteCommand(const char *cmd, char *response, uint16_t maxLen) {
         return false;
     }
 
+    if (strcmp(cmd, "W?") == 0) {
+        bool on = false;
+        if (s_services.isPumpOn != NULL) {
+            on = s_services.isPumpOn();
+        }
+        (void)snprintf(response, maxLen, "OK pump=%u\r\n", on ? 1U : 0U);
+        return true;
+    }
+
+    if (strcmp(cmd, "W") == 0) {
+        uint8_t stat;
+        if (s_services.triggerWatering == NULL) {
+            (void)snprintf(response, maxLen, "ERR not_supported\r\n");
+            return false;
+        }
+        stat = s_services.triggerWatering();
+        if (stat == 0U) {
+            (void)snprintf(response, maxLen, "OK watering_started\r\n");
+            return true;
+        } else if (stat == 1U) {
+            (void)snprintf(response, maxLen, "ERR tank_empty\r\n");
+            return false;
+        } else if (stat == 2U) {
+            (void)snprintf(response, maxLen, "ERR cooldown\r\n");
+            return false;
+        } else {
+            (void)snprintf(response, maxLen, "ERR watering_failed\r\n");
+            return false;
+        }
+    }
+
     (void)snprintf(response, maxLen, "ERR unknown_cmd\r\n");
     return false;
 }

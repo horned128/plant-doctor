@@ -1,0 +1,9 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer utilities {
+  .gauge-transition {
+    transition: stroke-dashoffset 0.8s ease-in-out;
+  }
+}

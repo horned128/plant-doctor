@@ -22,6 +22,7 @@ static bool s_solistAiInitialized = false;
 static bfloat16 s_solistAiInput[SOLIST_AI_FEATURE_DIM];
 #endif
 #include <stddef.h>                                         /* NULL定義 */
+#include <string.h>                                         /* memcpy定義 */
 
 static PLANT_FEATURE_STATE s_featureState;                  /**< 特徴量抽出内部状態 */
 static PLANT_FEATURE_VECTOR s_featureVector;                /**< 最新特徴量ベクトル */
@@ -33,6 +34,22 @@ static WATERING_RESPONSE_STATE s_wateringRespState;         /**< 給水応答状
 static WATERING_RESPONSE_CONFIG s_wateringRespConfig;       /**< 給水応答設定 */
 static uint32_t s_aiTick;                                   /**< 10ms Tickカウンタ */
 static uint8_t s_stressScore;                               /**< 最新ストレススコア */
+static uint32_t s_solistAiTrainCount = 0U;                  /**< 累積オンデバイス学習回数 */
+static uint16_t s_solistAiLatestLossPpm = 250U;             /**< 最新再構成損失 (PPM: 0..10000) */
+static uint8_t  s_solistAiPhase = 0U;                       /**< 学習フェーズ (0:Profiling, 1:Stabilizing, 2:Monitoring) */
+
+/**
+ * @brief センサー生値を Q8 形式の 0〜256 (実数 0.0〜1.0) に正規化
+ */
+static inline int16_t NormalizeToQ8(int32_t val, int32_t minVal, int32_t maxVal) {
+    if (val <= minVal) {
+        return 0;
+    }
+    if (val >= maxVal) {
+        return 256;
+    }
+    return (int16_t)(((val - minVal) * 256L) / (maxVal - minVal));
+}
 
 /** =================================================================*
  * @brief  PlantAi_Init処理
@@ -193,14 +210,14 @@ void PlantAi_Process10Ms(void) {
 #if defined(__arm__)
         if (s_solistAiInitialized) {
             int16_t rawFeatures[SOLIST_AI_FEATURE_DIM];
-            rawFeatures[0] = (int16_t)featureInput.soilMoisturePermille;
-            rawFeatures[1] = (int16_t)snapshot.leafTemperatureCentiC;
-            rawFeatures[2] = (int16_t)snapshot.airTemperatureCentiC;
-            rawFeatures[3] = (int16_t)s_featureVector.leafAirTemperatureDelta;
-            rawFeatures[4] = (int16_t)snapshot.relativeHumidityCentiPercent;
-            rawFeatures[5] = (int16_t)snapshot.illuminanceRaw;
-            rawFeatures[6] = (int16_t)s_featureVector.leafTemperatureRatePerHour;
-            rawFeatures[7] = (int16_t)s_featureVector.soilMoistureRatePerHour;
+            rawFeatures[0] = NormalizeToQ8(featureInput.soilMoisturePermille, 0, 1000);
+            rawFeatures[1] = NormalizeToQ8(snapshot.leafTemperatureCentiC, 1000, 4000);
+            rawFeatures[2] = NormalizeToQ8(snapshot.airTemperatureCentiC, 1000, 4000);
+            rawFeatures[3] = NormalizeToQ8(s_featureVector.leafAirTemperatureDelta, -400, 200);
+            rawFeatures[4] = NormalizeToQ8(snapshot.relativeHumidityCentiPercent, 2000, 10000);
+            rawFeatures[5] = NormalizeToQ8(snapshot.illuminanceRaw, 0, 2000);
+            rawFeatures[6] = NormalizeToQ8(s_featureVector.leafTemperatureRatePerHour, -500, 500);
+            rawFeatures[7] = NormalizeToQ8(s_featureVector.soilMoistureRatePerHour, -200, 200);
 
             ODL_ToBfloat16(s_solistAiInput, rawFeatures, 8U, SOLIST_AI_FEATURE_DIM);
 
@@ -212,7 +229,13 @@ void PlantAi_Process10Ms(void) {
             }
             if (waitLoops > 0UL) {
                 bfloat16 loss = OSUAD_GetLoss();
-                (void)loss;
+                /* bfloat16 (16-bit) -> float -> PPM (0..10000) */
+                float fLoss = 0.0f;
+                uint32_t rawLoss32 = ((uint32_t)(uint16_t)loss) << 16;
+                memcpy(&fLoss, &rawLoss32, sizeof(float));
+                if (fLoss < 0.0f) fLoss = 0.0f;
+                if (fLoss > 1.0f) fLoss = 1.0f;
+                s_solistAiLatestLossPpm = (uint16_t)(fLoss * 10000.0f);
 
                 /* 平常時（健康状態かつ低ストレスかつセンサ正常）にオンデバイス学習 */
                 if (s_diagnosisState.status == PLANT_STATUS_HEALTHY &&
@@ -227,7 +250,16 @@ void PlantAi_Process10Ms(void) {
                         Board_ServiceWatchdog();
                         --waitLoops;
                     }
-                    if (waitLoops == 0UL) {
+                    if (waitLoops > 0UL) {
+                        ++s_solistAiTrainCount;
+                        if (s_solistAiTrainCount < 100U) {
+                            s_solistAiPhase = 0U; /* PROFILING */
+                        } else if (s_solistAiTrainCount < 500U) {
+                            s_solistAiPhase = 1U; /* STABILIZING */
+                        } else {
+                            s_solistAiPhase = 2U; /* MONITORING */
+                        }
+                    } else {
                         s_solistAiInitialized = false;
                     }
                 }
@@ -312,4 +344,25 @@ WATERING_RESPONSE PlantAi_GetWateringResponse(void) {
  * ================================================================= */
 void PlantAi_ClearWateringFailure(void) {
     WateringResponse_ClearFailure(&s_wateringRespState);
+}
+
+/** =================================================================*
+ * @brief  累積オンデバイス学習ステップ数の取得
+ * ================================================================= */
+uint32_t PlantAi_GetSolistTrainCount(void) {
+    return s_solistAiTrainCount;
+}
+
+/** =================================================================*
+ * @brief  最新再構成損失 (PPM) の取得
+ * ================================================================= */
+uint16_t PlantAi_GetSolistLossPpm(void) {
+    return s_solistAiLatestLossPpm;
+}
+
+/** =================================================================*
+ * @brief  学習フェーズの取得 (0:Profiling, 1:Stabilizing, 2:Monitoring)
+ * ================================================================= */
+uint8_t PlantAi_GetSolistPhase(void) {
+    return s_solistAiPhase;
 }

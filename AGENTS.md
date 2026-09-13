@@ -260,6 +260,22 @@ macOS
 一時的な検証用や fallback 用の macOS 専用デバッグ構成は、標準構成が正常動作する場合は
 `.vscode/launch.json` に残す必要はありません。
 
+### ATOMS3 Lite (ESP32-S3 / PlatformIO) タスク
+
+ATOMS3 Lite ゲートウェイ（`firmware/esp32s3`）は **PlatformIO** を使用してビルド・書き込み・監視を行います。`idf.py` は不要です。
+
+```text
+Build: ATOMS3 Lite (PlatformIO)
+Flash: ATOMS3 Lite (PlatformIO)
+Monitor: ATOMS3 Lite (PlatformIO)
+Flash & Monitor: ATOMS3 Lite (PlatformIO)
+```
+
+F5 デバッグ構成:
+```text
+ATOMS3 Lite: PlatformIO Debug
+```
+
 ## 開発時の注意
 
 - `CommonFiles/` と一部の `PlantDoctorWorkspace/PlantDoctor/` には ROHM / ベンダー由来のファイルがあります。不要な変更を避けてください。

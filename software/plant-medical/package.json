@@ -1,6 +1,7 @@
 {
   "name": "plant-medical",
   "version": "1.0.0",
+  "type": "module",
   "private": true,
   "description": "Plant Doctor PC Monitoring Dashboard & Medical Station",
   "scripts": {

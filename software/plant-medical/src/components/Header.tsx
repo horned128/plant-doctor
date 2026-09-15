@@ -1,5 +1,6 @@
 import React from 'react';
 import { ConnectionState } from '../types';
+import { Leaf, Clock } from 'lucide-react';
 
 interface HeaderProps {
   gatewayHost: string;
@@ -15,56 +16,68 @@ export const Header: React.FC<HeaderProps> = ({
   onSyncTime,
 }) => {
   return (
-    <header className="flex flex-col md:flex-row justify-between items-center pb-6 border-b border-slate-800 mb-6 gap-4">
-      <div className="flex items-center space-x-3">
-        <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center text-3xl shadow-inner shadow-emerald-500/10">
-          🌿
+    <header className="flex flex-col sm:flex-row justify-between items-center pb-4 border-b border-slate-800/80 gap-3">
+      {/* Logo & Brand */}
+      <div className="flex items-center space-x-3 w-full sm:w-auto">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center shadow-lg shadow-emerald-600/20">
+          <Leaf className="w-5 h-5" />
         </div>
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-black tracking-tight text-white">Plant Medical</h1>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800 uppercase tracking-wide">
-              Edge AI Telemetry
+            <h1 className="text-xl font-black tracking-tight text-white">Plant Medical</h1>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-400 border border-emerald-800/60 uppercase tracking-wide">
+              Station
             </span>
           </div>
-          <p className="text-xs text-slate-400 mt-0.5">ROHM DT-EBML63Q2557 &times; ATOMS3 Lite Gateway</p>
+          <p className="text-[11px] text-slate-400">ROHM DT-EBML63Q2557 &times; ATOMS3 Lite</p>
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center space-x-2 bg-slate-900 px-3 py-1.5 rounded-xl border border-slate-800 text-xs">
-          <span className="text-slate-400">Host:</span>
+      {/* Connectivity & Actions */}
+      <div className="flex flex-wrap items-center justify-end gap-2.5 w-full sm:w-auto">
+        {/* Host config */}
+        <div className="flex items-center space-x-1.5 bg-slate-900/90 px-2.5 py-1.5 rounded-xl border border-slate-800 text-xs">
+          <span className="text-slate-500 text-[11px]">Host:</span>
           <input
             type="text"
             value={gatewayHost}
             onChange={(e) => setGatewayHost(e.target.value)}
             placeholder="plant-doctor.local"
-            className="bg-slate-800 text-slate-200 px-2 py-1 rounded border border-slate-700 w-36 outline-none focus:border-emerald-500 font-mono text-xs"
+            className="bg-slate-950 text-slate-200 px-2 py-0.5 rounded border border-slate-700/70 w-32 outline-none focus:border-emerald-500 font-mono text-[11px]"
           />
         </div>
 
-        <div className="flex items-center space-x-2 bg-slate-900 px-3 py-2 rounded-xl border border-slate-800 text-xs">
-          <span
-            className={`w-2.5 h-2.5 rounded-full ${
-              connState === 'connected'
-                ? 'bg-emerald-400 ring-4 ring-emerald-500/20'
-                : connState === 'connecting'
-                ? 'bg-amber-400 animate-pulse'
-                : 'bg-rose-500 ring-4 ring-rose-500/20'
-            }`}
-          />
-          <span className="text-slate-300 font-medium">
-            {connState === 'connected' ? 'Live Connected' : connState === 'connecting' ? 'Connecting...' : 'Disconnected'}
-          </span>
+        {/* Live Status Badge */}
+        <div className="flex items-center space-x-2 bg-slate-900/90 px-3 py-1.5 rounded-xl border border-slate-800 text-xs">
+          {connState === 'connected' ? (
+            <span className="flex items-center gap-1.5 text-emerald-400 font-medium">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span>接続中</span>
+            </span>
+          ) : connState === 'connecting' ? (
+            <span className="flex items-center gap-1.5 text-amber-400 font-medium">
+              <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+              <span>接続試行...</span>
+            </span>
+          ) : (
+            <span className="flex items-center gap-1.5 text-rose-400 font-medium">
+              <span className="w-2 h-2 rounded-full bg-rose-500" />
+              <span>未接続 (Demo)</span>
+            </span>
+          )}
         </div>
 
+        {/* Sync RTC Button */}
         <button
           onClick={onSyncTime}
-          className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-2 rounded-xl border border-slate-700 font-medium transition active:scale-95"
+          className="flex items-center space-x-1 text-xs bg-slate-900 hover:bg-slate-800 text-slate-300 px-3 py-1.5 rounded-xl border border-slate-800 transition active:scale-95 cursor-pointer"
+          title="PCの現在時刻をDT-EBMLのRTCへ同期"
         >
-          🕒 RTC時刻同期
+          <Clock className="w-3.5 h-3.5 text-slate-400" />
+          <span>RTC同期</span>
         </button>
       </div>
     </header>
   );
 };
+

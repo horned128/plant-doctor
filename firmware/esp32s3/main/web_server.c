@@ -24,6 +24,75 @@ static size_t s_log_total_written = 0;
 static portMUX_TYPE s_log_spinlock = portMUX_INITIALIZER_UNLOCKED;
 static vprintf_like_t s_default_vprintf = NULL;
 
+/* 10-minute downsampled telemetry history buffer (288 entries = 48 hours) */
+#define HISTORY_SAMPLE_INTERVAL_SEC 600
+#define HISTORY_RING_CAPACITY       288
+
+typedef struct {
+    uint32_t timestamp;
+    uint32_t seq;
+    uint8_t stress;
+    char status[16];
+    char soil_trend[16];
+    float air_temp;
+    float humidity;
+    float leaf_temp;
+    float leaf_air_diff;
+    uint16_t soil_raw;
+    uint16_t lux;
+    bool tank_liquid;
+    bool pump_on;
+    bool demo_mode;
+    uint16_t ai_train_count;
+    float ai_loss;
+    uint8_t ai_phase;
+    uint8_t ai_anomaly_score;
+    float leaf_temp_rate;
+    int16_t soil_rate;
+} history_sample_t;
+
+static history_sample_t s_history_ring[HISTORY_RING_CAPACITY];
+static size_t s_history_count = 0;
+static size_t s_history_write_idx = 0;
+static portMUX_TYPE s_history_spinlock = portMUX_INITIALIZER_UNLOCKED;
+static uint32_t s_last_history_sample_time = 0;
+
+static void history_record_sample(const plant_telemetry_t *t) {
+    if (!t || !t->valid) return;
+
+    portENTER_CRITICAL(&s_history_spinlock);
+    history_sample_t *dst = &s_history_ring[s_history_write_idx];
+    dst->timestamp = (uint32_t)t->timestamp;
+    dst->seq = (uint32_t)t->sampleSequence;
+    dst->stress = (uint8_t)t->stressScore;
+    strncpy(dst->status, t->status, sizeof(dst->status) - 1);
+    dst->status[sizeof(dst->status) - 1] = '\0';
+    strncpy(dst->soil_trend, t->soilTrend, sizeof(dst->soil_trend) - 1);
+    dst->soil_trend[sizeof(dst->soil_trend) - 1] = '\0';
+    dst->air_temp = (float)t->airTemperatureCentiC / 100.0f;
+    dst->humidity = (float)t->relativeHumidityCentiPercent / 100.0f;
+    dst->leaf_temp = (float)t->leafTemperatureCentiC / 100.0f;
+    dst->leaf_air_diff = (float)t->leafAirDiffCentiC / 100.0f;
+    dst->soil_raw = (uint16_t)t->soilMoistureRaw;
+    dst->lux = (uint16_t)t->illuminanceRaw;
+    dst->tank_liquid = t->tankLiquidDetected;
+    dst->pump_on = t->pumpOn;
+    dst->demo_mode = t->demoMode;
+    dst->ai_train_count = (uint16_t)t->aiTrainCount;
+    dst->ai_loss = (float)t->aiLoss;
+    dst->ai_phase = (uint8_t)t->aiPhase;
+    dst->ai_anomaly_score = (uint8_t)t->aiAnomalyScore;
+    dst->leaf_temp_rate = (float)t->leafTempRatePerHour;
+    dst->soil_rate = (int16_t)t->soilMoistureRatePerHour;
+
+    s_history_write_idx = (s_history_write_idx + 1) % HISTORY_RING_CAPACITY;
+    if (s_history_count < HISTORY_RING_CAPACITY) {
+        s_history_count++;
+    }
+    s_last_history_sample_time = (uint32_t)t->timestamp;
+    portEXIT_CRITICAL(&s_history_spinlock);
+}
+
 static int custom_vprintf(const char *fmt, va_list args) {
     va_list copy;
     va_copy(copy, args);
@@ -206,7 +275,7 @@ static esp_err_t ws_handler(httpd_req_t *req) {
     return ESP_OK;
 }
 
-/* Background task to push telemetry to all connected WebSocket clients */
+/* Background task to push telemetry to all connected WebSocket clients & record 10-min history */
 static void ws_broadcast_task(void *pvParameters) {
     char json_buf[768];
     plant_telemetry_t t;
@@ -214,6 +283,17 @@ static void ws_broadcast_task(void *pvParameters) {
     while (1) {
         if (s_server && ebml_client_get_latest_telemetry(&t)) {
             format_telemetry_json(&t, json_buf, sizeof(json_buf));
+
+            /* Check 10-min downsampled history recording */
+            if (t.valid) {
+                uint32_t now = (uint32_t)t.timestamp;
+                if (s_history_count == 0 || (now >= s_last_history_sample_time + HISTORY_SAMPLE_INTERVAL_SEC)) {
+                    history_record_sample(&t);
+                    ESP_LOGI(TAG, "Recorded 10-min history sample #%u (stress=%u, temp=%.2fC)",
+                             (unsigned int)s_history_count, (unsigned int)t.stressScore,
+                             (double)t.airTemperatureCentiC / 100.0);
+                }
+            }
 
             /* Get all client FDs and send frame */
             size_t max_clients = 8;
@@ -238,6 +318,77 @@ static void ws_broadcast_task(void *pvParameters) {
 }
 
 static TaskHandle_t s_ws_task_handle = NULL;
+
+/* Handler for GET /api/history (JSON array of 10-minute downsampled records) */
+static esp_err_t history_get_handler(httpd_req_t *req) {
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+
+    httpd_resp_send_chunk(req, "[", 1);
+
+    char chunk[400];
+    portENTER_CRITICAL(&s_history_spinlock);
+    size_t count = s_history_count;
+    size_t start = (s_history_write_idx + HISTORY_RING_CAPACITY - count) % HISTORY_RING_CAPACITY;
+    portEXIT_CRITICAL(&s_history_spinlock);
+
+    for (size_t i = 0; i < count; i++) {
+        history_sample_t s;
+        portENTER_CRITICAL(&s_history_spinlock);
+        s = s_history_ring[(start + i) % HISTORY_RING_CAPACITY];
+        portEXIT_CRITICAL(&s_history_spinlock);
+
+        int len = snprintf(chunk, sizeof(chunk),
+            "%s{\"timestamp\":%lu,\"seq\":%lu,\"stress\":%u,\"status\":\"%s\",\"soil_trend\":\"%s\","
+            "\"air_temp\":%.2f,\"humidity\":%.2f,\"leaf_temp\":%.2f,\"leaf_air_diff\":%.2f,"
+            "\"soil_raw\":%u,\"lux\":%u,\"tank_liquid\":%s,\"pump_on\":%s,\"demo_mode\":%s,"
+            "\"ai_train_count\":%u,\"ai_loss\":%.4f,\"ai_phase\":%u,\"ai_anomaly_score\":%u,"
+            "\"leaf_temp_rate\":%.2f,\"soil_rate\":%d}",
+            (i > 0) ? "," : "",
+            (unsigned long)s.timestamp,
+            (unsigned long)s.seq,
+            (unsigned int)s.stress,
+            s.status,
+            s.soil_trend,
+            s.air_temp,
+            s.humidity,
+            s.leaf_temp,
+            s.leaf_air_diff,
+            (unsigned int)s.soil_raw,
+            (unsigned int)s.lux,
+            s.tank_liquid ? "true" : "false",
+            s.pump_on ? "true" : "false",
+            s.demo_mode ? "true" : "false",
+            (unsigned int)s.ai_train_count,
+            s.ai_loss,
+            (unsigned int)s.ai_phase,
+            (unsigned int)s.ai_anomaly_score,
+            s.leaf_temp_rate,
+            (int)s.soil_rate);
+
+        if (httpd_resp_send_chunk(req, chunk, len) != ESP_OK) {
+            return ESP_FAIL;
+        }
+    }
+
+    httpd_resp_send_chunk(req, "]", 1);
+    httpd_resp_send_chunk(req, NULL, 0);
+    return ESP_OK;
+}
+
+/* Handler for POST /api/history/clear */
+static esp_err_t history_clear_handler(httpd_req_t *req) {
+    portENTER_CRITICAL(&s_history_spinlock);
+    s_history_count = 0;
+    s_history_write_idx = 0;
+    s_last_history_sample_time = 0;
+    portEXIT_CRITICAL(&s_history_spinlock);
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+    httpd_resp_send(req, "{\"status\":\"ok\",\"message\":\"history_cleared\"}", HTTPD_RESP_USE_STRLEN);
+    return ESP_OK;
+}
 
 static esp_err_t logs_get_handler(httpd_req_t *req) {
     char *buf = malloc(LOG_RING_SIZE + 1);
@@ -295,6 +446,22 @@ void web_server_start(void) {
         .user_ctx = NULL
     };
     httpd_register_uri_handler(s_server, &uri_logs);
+
+    httpd_uri_t uri_history = {
+        .uri      = "/api/history",
+        .method   = HTTP_GET,
+        .handler  = history_get_handler,
+        .user_ctx = NULL
+    };
+    httpd_register_uri_handler(s_server, &uri_history);
+
+    httpd_uri_t uri_history_clear = {
+        .uri      = "/api/history/clear",
+        .method   = HTTP_POST,
+        .handler  = history_clear_handler,
+        .user_ctx = NULL
+    };
+    httpd_register_uri_handler(s_server, &uri_history_clear);
 
     httpd_uri_t uri_water = {
         .uri      = "/api/water",

@@ -1,40 +1,37 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   TelemetryData,
-  TelemetryRecord,
+  HistorySampleRecord,
   ConnectionState,
   HistoryRange,
-  DatabaseStats,
+  ActiveTab,
 } from './types';
 import { Header } from './components/Header';
-import { StressMeter } from './components/StressMeter';
-import { DiagnosisCard } from './components/DiagnosisCard';
-import { EnvironmentPanel } from './components/EnvironmentPanel';
-import { WateringControl } from './components/WateringControl';
+import { StatusHero } from './components/StatusHero';
+import { MetricGrid } from './components/MetricGrid';
+import { HistoryLogTable } from './components/HistoryLogTable';
 import { TimeSeriesChart } from './components/TimeSeriesChart';
 import { SolistAiStatusCard } from './components/SolistAiStatusCard';
 import { SolistAiLossChart } from './components/SolistAiLossChart';
 import { SolistAiFeatureRadar } from './components/SolistAiFeatureRadar';
-import { HistoryToolbar } from './components/HistoryToolbar';
 import {
-  queueTelemetryRecord,
-  getTelemetryRange,
-  getDatabaseStats,
-  clearAllRecords,
-  exportAllAsCsv,
-} from './services/db';
+  fetchServerHistory,
+  clearServerHistory,
+} from './services/historyApi';
+import { Server, LineChart, Cpu } from 'lucide-react';
 
 const MAX_CHART_POINTS = 60; // 60 seconds for live view
 
 export default function App() {
   const [gatewayHost, setGatewayHost] = useState('plant-doctor.local');
   const [connState, setConnState] = useState<ConnectionState>('connecting');
+  const [activeTab, setActiveTab] = useState<ActiveTab>('logs');
 
   // Live telemetry state
   const [telemetry, setTelemetry] = useState<TelemetryData>({
     type: 'telemetry',
-    timestamp: 0,
-    seq: 0,
+    timestamp: Math.floor(Date.now() / 1000),
+    seq: 1,
     stress: 18,
     status: 'HEALTHY',
     soil_trend: 'STABLE',
@@ -56,7 +53,7 @@ export default function App() {
     soil_rate: -15.0,
   });
 
-  // Short live rolling history (60 sec)
+  // Short live rolling history (60 sec) for charts
   const [liveHistory, setLiveHistory] = useState<{
     labels: string[];
     airTemps: number[];
@@ -71,67 +68,34 @@ export default function App() {
     losses: [],
   });
 
-  // History & Storage state
-  const [mode, setMode] = useState<'live' | 'history'>('live');
-  const [historyRange, setHistoryRange] = useState<HistoryRange>('1h');
-  const [isRecording, setIsRecording] = useState<boolean>(true);
-  const [dbStats, setDbStats] = useState<DatabaseStats>({
-    totalRecords: 0,
-    estimatedSizeMb: 0,
-    recording: true,
-  });
-  const [historyRecords, setHistoryRecords] = useState<TelemetryRecord[]>([]);
-  const [scrubberIndex, setScrubberIndex] = useState<number>(0);
+  // Server-side 10-minute downsampled history state
+  const [historyRecords, setHistoryRecords] = useState<HistorySampleRecord[]>([]);
+  const [historyRange, setHistoryRange] = useState<HistoryRange>('24h');
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
-  const isRecordingRef = useRef<boolean>(true);
-  isRecordingRef.current = isRecording;
 
-  // Refresh DB stats periodically
-  const refreshDbStats = useCallback(async () => {
+  // Load server-side 10-minute history
+  const loadHistory = useCallback(async () => {
+    setIsLoadingHistory(true);
     try {
-      const stats = await getDatabaseStats();
-      setDbStats({
-        ...stats,
-        recording: isRecordingRef.current,
-      });
-    } catch (e) {
-      console.error('Failed to get DB stats:', e);
-    }
-  }, []);
-
-  useEffect(() => {
-    refreshDbStats();
-    const timer = setInterval(refreshDbStats, 5000);
-    return () => clearInterval(timer);
-  }, [refreshDbStats]);
-
-  // Load historical records when entering history mode or changing range
-  const loadHistoryRange = useCallback(async (range: HistoryRange) => {
-    const now = Date.now();
-    let startTime = 0;
-    if (range === '10m') startTime = now - 10 * 60 * 1000;
-    else if (range === '1h') startTime = now - 60 * 60 * 1000;
-    else if (range === '6h') startTime = now - 6 * 60 * 60 * 1000;
-    else if (range === '24h') startTime = now - 24 * 60 * 60 * 1000;
-    else if (range === 'all') startTime = 0;
-
-    try {
-      const records = await getTelemetryRange(startTime, now, 300);
+      const records = await fetchServerHistory(gatewayHost);
       setHistoryRecords(records);
-      setScrubberIndex(records.length > 0 ? records.length - 1 : 0);
     } catch (e) {
-      console.error('Failed to load history records:', e);
+      console.error('Failed to load server history:', e);
+    } finally {
+      setIsLoadingHistory(false);
     }
-  }, []);
+  }, [gatewayHost]);
 
+  // Initial history load and periodic polling (every 60 seconds)
   useEffect(() => {
-    if (mode === 'history') {
-      loadHistoryRange(historyRange);
-    }
-  }, [mode, historyRange, loadHistoryRange]);
+    loadHistory();
+    const timer = setInterval(loadHistory, 60000);
+    return () => clearInterval(timer);
+  }, [loadHistory]);
 
-  // WebSocket connection & live ingestion
+  // WebSocket connection & live streaming
   useEffect(() => {
     let ws: WebSocket;
     let reconnectTimeout: any;
@@ -160,11 +124,6 @@ export default function App() {
           const data: TelemetryData = JSON.parse(event.data);
           if (data.type === 'telemetry') {
             setTelemetry(data);
-
-            // Persist to IndexedDB if recording is active
-            if (isRecordingRef.current) {
-              queueTelemetryRecord(data);
-            }
 
             const now = new Date();
             const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now
@@ -216,98 +175,7 @@ export default function App() {
     };
   }, [gatewayHost]);
 
-  // Selected telemetry to display across all widgets (Live or Scrubber position)
-  const displayedTelemetry: TelemetryData = useMemo(() => {
-    if (mode === 'history' && historyRecords.length > 0) {
-      const idx = Math.min(Math.max(scrubberIndex, 0), historyRecords.length - 1);
-      return historyRecords[idx];
-    }
-    return telemetry;
-  }, [mode, historyRecords, scrubberIndex, telemetry]);
-
-  // Scrubbed timestamp string
-  const scrubbedTimeStr = useMemo(() => {
-    if (mode === 'history' && historyRecords.length > 0) {
-      const idx = Math.min(Math.max(scrubberIndex, 0), historyRecords.length - 1);
-      const rec = historyRecords[idx];
-      return new Date(rec.recordTime).toLocaleString('ja-JP', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-      });
-    }
-    return undefined;
-  }, [mode, historyRecords, scrubberIndex]);
-
-  // Chart datasets (Live rolling vs Historical range)
-  const chartDatasets = useMemo(() => {
-    if (mode === 'history') {
-      const labels = historyRecords.map((r) => {
-        const d = new Date(r.recordTime);
-        return `${d.getHours().toString().padStart(2, '0')}:${d
-          .getMinutes()
-          .toString()
-          .padStart(2, '0')}:${d.getSeconds().toString().padStart(2, '0')}`;
-      });
-      const airTemps = historyRecords.map((r) => r.air_temp);
-      const leafTemps = historyRecords.map((r) => r.leaf_temp);
-      const soilRaws = historyRecords.map((r) => r.soil_raw);
-      const losses = historyRecords.map((r) => r.ai_loss ?? 0.025);
-
-      return { labels, airTemps, leafTemps, soilRaws, losses };
-    }
-    return liveHistory;
-  }, [mode, historyRecords, liveHistory]);
-
   // Handlers
-  const handleToggleMode = (newMode: 'live' | 'history') => {
-    setMode(newMode);
-    if (newMode === 'history') {
-      loadHistoryRange(historyRange);
-    }
-  };
-
-  const handleChangeRange = (newRange: HistoryRange) => {
-    setHistoryRange(newRange);
-    loadHistoryRange(newRange);
-  };
-
-  const handleToggleRecording = () => {
-    setIsRecording((prev) => !prev);
-  };
-
-  const handleClearHistory = async () => {
-    if (window.confirm('ブラウザに保存されたすべての過去ログを消去しますか？')) {
-      await clearAllRecords();
-      setHistoryRecords([]);
-      setScrubberIndex(0);
-      refreshDbStats();
-      alert('すべての過去ログを消去しました。');
-    }
-  };
-
-  const handleExportAllCsv = async () => {
-    try {
-      const csv = await exportAllAsCsv();
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.setAttribute('href', url);
-      link.setAttribute(
-        'download',
-        `plant_doctor_full_history_${new Date().toISOString().replace(/[:.]/g, '-')}.csv`
-      );
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch (e) {
-      alert('CSVエクスポートに失敗しました: ' + e);
-    }
-  };
-
   const handleTriggerWatering = () => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send('water');
@@ -316,6 +184,21 @@ export default function App() {
         console.error(e)
       );
     }
+    // Optimistic UI update
+    setTelemetry((prev) => ({
+      ...prev,
+      pump_on: true,
+      status: 'WATERING',
+    }));
+    setTimeout(() => {
+      setTelemetry((prev) => ({
+        ...prev,
+        pump_on: false,
+        status: 'HEALTHY',
+        stress: Math.max(10, prev.stress - 15),
+      }));
+      loadHistory();
+    }, 2500);
   };
 
   const handleToggleDemo = (enable: boolean) => {
@@ -326,6 +209,12 @@ export default function App() {
         method: 'POST',
       }).catch((e) => console.error(e));
     }
+    setTelemetry((prev) => ({
+      ...prev,
+      demo_mode: enable,
+      status: enable ? 'DRY_STRESS' : 'HEALTHY',
+      stress: enable ? 65 : 18,
+    }));
   };
 
   const handleSyncTime = () => {
@@ -339,33 +228,25 @@ export default function App() {
       .catch((e) => alert('時刻同期エラー: ' + e));
   };
 
+  const handleClearHistory = async () => {
+    if (window.confirm('サーバに保存された10分サンプリング履歴ログを消去しますか？')) {
+      await clearServerHistory(gatewayHost);
+      setHistoryRecords([]);
+      alert('履歴ログを消去しました。');
+    }
+  };
+
   const handleExportCsv = () => {
     const rows = [
-      [
-        'Time',
-        'AirTemp(C)',
-        'LeafTemp(C)',
-        'Delta(C)',
-        'SoilRaw',
-        'Stress',
-        'Status',
-        'AiTrainCount',
-        'AiLoss',
-        'AiPhase',
-        'AiAnomalyScore',
-      ],
-      ...chartDatasets.labels.map((lbl, i) => [
+      ['Time', 'AirTemp(C)', 'LeafTemp(C)', 'Delta(C)', 'SoilRaw', 'Stress', 'Status'],
+      ...liveHistory.labels.map((lbl, i) => [
         lbl,
-        chartDatasets.airTemps[i]?.toFixed(2),
-        chartDatasets.leafTemps[i]?.toFixed(2),
-        (chartDatasets.leafTemps[i] - chartDatasets.airTemps[i])?.toFixed(2),
-        chartDatasets.soilRaws[i],
-        displayedTelemetry.stress,
-        displayedTelemetry.status,
-        displayedTelemetry.ai_train_count ?? 0,
-        chartDatasets.losses[i]?.toFixed(4) ?? '0.0000',
-        displayedTelemetry.ai_phase ?? 0,
-        displayedTelemetry.ai_anomaly_score ?? 0,
+        liveHistory.airTemps[i]?.toFixed(2),
+        liveHistory.leafTemps[i]?.toFixed(2),
+        (liveHistory.leafTemps[i] - liveHistory.airTemps[i])?.toFixed(2),
+        liveHistory.soilRaws[i],
+        telemetry.stress,
+        telemetry.status,
       ]),
     ];
 
@@ -376,7 +257,7 @@ export default function App() {
     link.setAttribute('href', encodedUri);
     link.setAttribute(
       'download',
-      `plant_telemetry_${new Date().toISOString().replace(/[:.]/g, '-')}.csv`
+      `plant_telemetry_live_${new Date().toISOString().replace(/[:.]/g, '-')}.csv`
     );
     document.body.appendChild(link);
     link.click();
@@ -384,7 +265,8 @@ export default function App() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8 space-y-6">
+    <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
+      {/* 1. Header (Minimalist & Crisp) */}
       <Header
         gatewayHost={gatewayHost}
         setGatewayHost={setGatewayHost}
@@ -392,84 +274,131 @@ export default function App() {
         onSyncTime={handleSyncTime}
       />
 
-      {/* History & Storage Control Toolbar */}
-      <HistoryToolbar
-        mode={mode}
-        onToggleMode={handleToggleMode}
-        historyRange={historyRange}
-        onChangeRange={handleChangeRange}
-        stats={dbStats}
-        isRecording={isRecording}
-        onToggleRecording={handleToggleRecording}
-        onClearHistory={handleClearHistory}
-        onExportHistoryCsv={handleExportAllCsv}
-        scrubberIndex={scrubberIndex}
-        scrubberMax={historyRecords.length > 0 ? historyRecords.length - 1 : 0}
-        onScrub={setScrubberIndex}
-        scrubbedTimeStr={scrubbedTimeStr}
+      {/* 2. Hero Section: Plant Visualizer + Stress Meter & Actions */}
+      <StatusHero
+        status={telemetry.status}
+        stress={telemetry.stress}
+        soilTrend={telemetry.soil_trend}
+        soilRaw={telemetry.soil_raw}
+        tankLiquid={telemetry.tank_liquid}
+        pumpOn={telemetry.pump_on}
+        demoMode={telemetry.demo_mode}
+        onTriggerWatering={handleTriggerWatering}
+        onToggleDemo={handleToggleDemo}
       />
 
-      {/* Solist-AI™ On-Device Learning Hero Station */}
-      <SolistAiStatusCard
-        phase={displayedTelemetry.ai_phase}
-        trainCount={displayedTelemetry.ai_train_count}
-        loss={displayedTelemetry.ai_loss}
-        anomalyScore={displayedTelemetry.ai_anomaly_score}
-        stress={displayedTelemetry.stress}
+      {/* 3. Environmental & Biological Metric Grid */}
+      <MetricGrid
+        airTemp={telemetry.air_temp}
+        humidity={telemetry.humidity}
+        leafTemp={telemetry.leaf_temp}
+        leafAirDiff={telemetry.leaf_air_diff}
+        soilRaw={telemetry.soil_raw}
+        lux={telemetry.lux}
       />
 
-      {/* Core Diagnostic & Environmental Status Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StressMeter score={displayedTelemetry.stress} />
-        <DiagnosisCard
-          status={displayedTelemetry.status}
-          soilTrend={displayedTelemetry.soil_trend}
-        />
-        <EnvironmentPanel
-          airTemp={displayedTelemetry.air_temp}
-          humidity={displayedTelemetry.humidity}
-          leafTemp={displayedTelemetry.leaf_temp}
-          leafAirDiff={displayedTelemetry.leaf_air_diff}
-          soilRaw={displayedTelemetry.soil_raw}
-          lux={displayedTelemetry.lux}
-        />
-        <WateringControl
-          tankLiquid={displayedTelemetry.tank_liquid}
-          pumpOn={displayedTelemetry.pump_on}
-          demoMode={displayedTelemetry.demo_mode}
-          onTriggerWatering={handleTriggerWatering}
-          onToggleDemo={handleToggleDemo}
-        />
+      {/* 4. Tab Navigation (Declutters UI into intuitive workspaces) */}
+      <div className="flex items-center justify-between border-b border-slate-800 pb-3 pt-2">
+        <div className="flex items-center space-x-2 bg-slate-900/90 p-1.5 rounded-2xl border border-slate-800">
+          <button
+            onClick={() => setActiveTab('logs')}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeTab === 'logs'
+                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Server className="w-4 h-4" />
+            <span>10分サンプリング履歴ログ</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('charts')}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeTab === 'charts'
+                ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <LineChart className="w-4 h-4" />
+            <span>環境時系列推移</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('ai')}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeTab === 'ai'
+                ? 'bg-teal-600 text-white shadow-lg shadow-teal-600/30'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Cpu className="w-4 h-4" />
+            <span>Solist-AI™ 分析</span>
+          </button>
+        </div>
+
+        <span className="text-xs text-slate-500 hidden sm:inline">
+          ROHM ML63Q2557 生体モニタリングステーション
+        </span>
       </div>
 
-      {/* Solist-AI™ Deep Analysis Section: Loss Convergence & 8D Feature Radar */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <SolistAiLossChart
-          timeLabels={chartDatasets.labels}
-          lossHistory={chartDatasets.losses}
-          isHistory={mode === 'history'}
-        />
-        <SolistAiFeatureRadar
-          soilRaw={displayedTelemetry.soil_raw}
-          leafTemp={displayedTelemetry.leaf_temp}
-          airTemp={displayedTelemetry.air_temp}
-          leafAirDiff={displayedTelemetry.leaf_air_diff}
-          humidity={displayedTelemetry.humidity}
-          lux={displayedTelemetry.lux}
-          leafTempRate={displayedTelemetry.leaf_temp_rate}
-          soilRate={displayedTelemetry.soil_rate}
-        />
-      </div>
+      {/* 5. Tab Content Panes */}
+      <div>
+        {/* Tab 1: Server 10-Minute Downsampled Logs */}
+        {activeTab === 'logs' && (
+          <HistoryLogTable
+            records={historyRecords}
+            range={historyRange}
+            onChangeRange={setHistoryRange}
+            onRefresh={loadHistory}
+            onClear={handleClearHistory}
+            isLoading={isLoadingHistory}
+          />
+        )}
 
-      {/* Environmental Time Series Chart */}
-      <TimeSeriesChart
-        timeLabels={chartDatasets.labels}
-        airTemps={chartDatasets.airTemps}
-        leafTemps={chartDatasets.leafTemps}
-        soilRaws={chartDatasets.soilRaws}
-        onExportCsv={handleExportCsv}
-        isHistory={mode === 'history'}
-      />
+        {/* Tab 2: Environmental Time Series Charts */}
+        {activeTab === 'charts' && (
+          <TimeSeriesChart
+            timeLabels={liveHistory.labels}
+            airTemps={liveHistory.airTemps}
+            leafTemps={liveHistory.leafTemps}
+            soilRaws={liveHistory.soilRaws}
+            onExportCsv={handleExportCsv}
+            isHistory={false}
+          />
+        )}
+
+        {/* Tab 3: Solist-AI™ On-Device Learning & Feature Analysis */}
+        {activeTab === 'ai' && (
+          <div className="space-y-6">
+            <SolistAiStatusCard
+              phase={telemetry.ai_phase}
+              trainCount={telemetry.ai_train_count}
+              loss={telemetry.ai_loss}
+              anomalyScore={telemetry.ai_anomaly_score}
+              stress={telemetry.stress}
+            />
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <SolistAiLossChart
+                timeLabels={liveHistory.labels}
+                lossHistory={liveHistory.losses}
+                isHistory={false}
+              />
+              <SolistAiFeatureRadar
+                soilRaw={telemetry.soil_raw}
+                leafTemp={telemetry.leaf_temp}
+                airTemp={telemetry.air_temp}
+                leafAirDiff={telemetry.leaf_air_diff}
+                humidity={telemetry.humidity}
+                lux={telemetry.lux}
+                leafTempRate={telemetry.leaf_temp_rate}
+                soilRate={telemetry.soil_rate}
+              />
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

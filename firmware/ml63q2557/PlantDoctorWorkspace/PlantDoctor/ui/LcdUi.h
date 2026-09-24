@@ -44,6 +44,7 @@ void LcdUi_FormatPage(const LCD_DIAGNOSIS_VIEW_DATA *diagData,
                       char *line1,
                       char *line2,
                       uint8_t lineSize);
+void LcdUi_FormatError(PLANT_DOCTOR_ERROR error, char *line1, char *line2, uint8_t lineSize);
 
 #endif /* LCD_UI_H */
 

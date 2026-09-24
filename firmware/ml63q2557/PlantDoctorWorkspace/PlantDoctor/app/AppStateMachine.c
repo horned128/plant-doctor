@@ -198,9 +198,13 @@ void AppStateMachine_Process(void) {
 
         case APP_STATE_ERROR:
             if (!s_errorShown) {
-                s_errorShown = true;
+                if (!LcdUi_IsReady()) {
+                    if ((s_stateTicks == 0U) || ((s_stateTicks % PLANT_DOCTOR_SELF_TEST_TICKS) == 0U)) {
+                        (void)LcdUi_Init();
+                    }
+                }
                 if (LcdUi_IsReady()) {
-                    (void)LcdUi_ShowError(s_error);
+                    s_errorShown = LcdUi_ShowError(s_error);
                 }
             }
             break;

@@ -92,12 +92,21 @@ void App_Init(void) {
         TimeKeeper_Init(unixSec, true);
     }
 
-    if (!SensorManager_Init() || !PlantAi_Init() || !PumpControl_Init()) {
+    if (!SensorManager_Init()) {
         AppStateMachine_EnterError(PLANT_DOCTOR_ERROR_SENSOR_INTERFACE);
+        return;
+    }
+    if (!PlantAi_Init()) {
+        AppStateMachine_EnterError(PLANT_DOCTOR_ERROR_AI);
+        return;
+    }
+    if (!PumpControl_Init()) {
+        AppStateMachine_EnterError(PLANT_DOCTOR_ERROR_ACTUATOR);
         return;
     }
     if (!PlantLog_Init()) {
         AppStateMachine_EnterError(PLANT_DOCTOR_ERROR_STORAGE_INTERFACE);
+        return;
     }
     (void)ConsoleUart_Init(&s_consoleServices);
     (void)EbmlI2cTelemetry_Init();

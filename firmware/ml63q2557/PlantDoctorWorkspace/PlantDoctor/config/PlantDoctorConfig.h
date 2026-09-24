@@ -43,8 +43,7 @@
 #define PLANT_DOCTOR_DIAG_SOIL_DRY_RATE_PER_HOUR     (-10)     /* 土壌乾燥傾向速度 (-10‰/h) */
 #define PLANT_DOCTOR_DIAG_SOIL_WET_RATE_PER_HOUR     (10)      /* 土壌湿潤傾向速度 (+10‰/h) */
 
-/* P4-3 ストレスバロメータ設定（TODO(P2-7): 実測に基づく調整予定の暫定値） */
-#define PLANT_DOCTOR_STRESS_BASE_SCORE               (18U)     /* 平常時ベーススコア (DEMO1: 18/100) */
+#define PLANT_DOCTOR_STRESS_BASE_SCORE               (0U)      /* 平常時ベーススコア (0〜100フルレンジ活用) */
 #define PLANT_DOCTOR_STRESS_WEIGHT_SOIL              (35U)     /* 土壌水分の重み */
 #define PLANT_DOCTOR_STRESS_WEIGHT_HEAT              (35U)     /* 熱ストレスの重み */
 #define PLANT_DOCTOR_STRESS_WEIGHT_LIGHT             (15U)     /* 日照の重み */

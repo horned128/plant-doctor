@@ -388,12 +388,14 @@ bool LcdUi_ShowSensorPage(const PLANT_SENSOR_SNAPSHOT *snapshot, uint8_t page) {
 }
 
 /** =================================================================*
- * @brief  LcdUi_ShowError処理
- * @param[in] error 引数
- * @return 実行結果または取得値
+ * @brief  エラー表示行を整形（各行16文字以内）
  * ================================================================= */
-bool LcdUi_ShowError(PLANT_DOCTOR_ERROR error) {
+void LcdUi_FormatError(PLANT_DOCTOR_ERROR error, char *line1, char *line2, uint8_t lineSize) {
     const char *message;
+
+    if ((line1 == NULL) || (line2 == NULL) || (lineSize == 0U)) {
+        return;
+    }
 
     switch (error) {
         case PLANT_DOCTOR_ERROR_POWER:
@@ -418,13 +420,40 @@ bool LcdUi_ShowError(PLANT_DOCTOR_ERROR error) {
         case PLANT_DOCTOR_ERROR_STORAGE_INTERFACE:
             message = "ERROR STORAGE";
             break;
+        case PLANT_DOCTOR_ERROR_AI:
+            message = "ERROR AI";
+            break;
+        case PLANT_DOCTOR_ERROR_ACTUATOR:
+            message = "ERROR PUMP";
+            break;
         case PLANT_DOCTOR_ERROR_NONE:
         default:
             message = "ERROR UNKNOWN";
             break;
     }
 
-    return s_ready &&
-        LcdUi_WriteLine(LCD_START_OF_FIRST_LINE, "PLANT DOCTOR") &&
-        LcdUi_WriteLine(LCD_START_OF_SECOND_LINE, message);
+    (void)snprintf(line1, (size_t)lineSize, "PLANT DOCTOR");
+    (void)snprintf(line2, (size_t)lineSize, "%s", message);
+}
+
+/** =================================================================*
+ * @brief  LcdUi_ShowError処理
+ * @param[in] error 引数
+ * @return 実行結果または取得値
+ * ================================================================= */
+bool LcdUi_ShowError(PLANT_DOCTOR_ERROR error) {
+    char line1[LCD_MOST_CHARACTERS_ON_A_LINE + 1U];
+    char line2[LCD_MOST_CHARACTERS_ON_A_LINE + 1U];
+
+    if (!s_ready) {
+        (void)LcdUi_Initialize();
+    }
+    if (!s_ready) {
+        return false;
+    }
+
+    LcdUi_FormatError(error, line1, line2, sizeof(line1));
+
+    return LcdUi_WriteLine(LCD_START_OF_FIRST_LINE, line1) &&
+           LcdUi_WriteLine(LCD_START_OF_SECOND_LINE, line2);
 }

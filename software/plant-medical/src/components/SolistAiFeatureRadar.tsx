@@ -20,6 +20,8 @@ ChartJS.register(
   Legend
 );
 
+import { PlantProfile } from '../types';
+
 interface SolistAiFeatureRadarProps {
   soilRaw: number;
   leafTemp: number;
@@ -29,6 +31,7 @@ interface SolistAiFeatureRadarProps {
   lux: number;
   leafTempRate?: number;
   soilRate?: number;
+  activeProfile?: PlantProfile;
 }
 
 export const SolistAiFeatureRadar: React.FC<SolistAiFeatureRadarProps> = ({
@@ -40,9 +43,9 @@ export const SolistAiFeatureRadar: React.FC<SolistAiFeatureRadarProps> = ({
   lux,
   leafTempRate = 0.0,
   soilRate = 0.0,
+  activeProfile,
 }) => {
   // Normalize each feature to a 0-100 scale for intuitive radar comparison
-  // Normal baseline ideal points are ~50-60 on this scale
   const clamp = (val: number, min: number, max: number) =>
     Math.min(Math.max(val, min), max);
 
@@ -69,8 +72,18 @@ export const SolistAiFeatureRadar: React.FC<SolistAiFeatureRadarProps> = ({
   // 5. Humidity (20% -> 0, 60% -> 50, 100% -> 100)
   const normHum = clamp(Math.round(((humidity - 20) / 80) * 100), 0, 100);
 
-  // 6. Lux (0 -> 0, 500 -> 50, 1000 -> 100)
-  const normLux = clamp(Math.round((lux / 1000) * 100), 0, 100);
+  // 6. Lux: 植物好適光量ゾーン（不感帯）を考慮した落とし込み
+  // 室内照明（200〜800 Lux）は植物にとって快適な光合成光量であるため、50（適正中央）付近に収斂。
+  // 人間の生活照明の点灯/消灯ノイズで異常判定されないよう、好適帯は 45〜55% に落ち着かせ、
+  // <50 Lux（日照不足）や >1500 Lux（直射日光・葉焼け）のみをストレスとして表現。
+  let normLux = 50;
+  if (lux < 200) {
+    normLux = clamp(Math.round((lux / 200) * 45), 5, 45);
+  } else if (lux <= 850) {
+    normLux = clamp(Math.round(45 + ((lux - 200) / 650) * 10), 45, 55);
+  } else {
+    normLux = clamp(Math.round(55 + ((lux - 850) / 1150) * 45), 55, 100);
+  }
 
   // 7. Leaf Temp Rate (-5C/h -> 0, 0C/h -> 50, +5C/h -> 100)
   const normLeafRate = clamp(
@@ -108,8 +121,8 @@ export const SolistAiFeatureRadar: React.FC<SolistAiFeatureRadarProps> = ({
     normSoilRate,
   ];
 
-  // Healthy learned baseline signature (50 is neutral / ideal midpoint)
-  const baselineValues = [55, 50, 50, 45, 55, 50, 50, 50];
+  // 植物プロファイル固有の学習基準モデル（未指定時はデフォルト）
+  const baselineValues = activeProfile?.baselineFeatures ?? [55, 50, 50, 45, 55, 50, 50, 50];
 
   const data = {
     labels: featureLabels,
@@ -126,7 +139,7 @@ export const SolistAiFeatureRadar: React.FC<SolistAiFeatureRadarProps> = ({
         pointHoverBorderColor: '#38bdf8',
       },
       {
-        label: '学習基準モデル (Learned Baseline)',
+        label: activeProfile ? `${activeProfile.name} 基準モデル` : '学習基準モデル (Learned Baseline)',
         data: baselineValues,
         backgroundColor: 'rgba(16, 185, 129, 0.15)',
         borderColor: '#10b981',
@@ -188,11 +201,12 @@ export const SolistAiFeatureRadar: React.FC<SolistAiFeatureRadarProps> = ({
   };
 
   // Attribution indicators
+  const luxBaseline = baselineValues[5] ?? 50;
   const featureDetails = [
-    { label: '土壌水分', raw: `${normSoil}%`, diff: Math.abs(normSoil - 55) },
-    { label: '葉気温差 ΔT', raw: `${leafAirDiff > 0 ? '+' : ''}${leafAirDiff.toFixed(1)}℃`, diff: Math.abs(normDiff - 45) },
-    { label: '葉温変化率', raw: `${leafTempRate.toFixed(1)}℃/h`, diff: Math.abs(normLeafRate - 50) },
-    { label: '土壌変化率', raw: `${soilRate.toFixed(0)}/h`, diff: Math.abs(normSoilRate - 50) },
+    { label: '土壌水分', raw: `${normSoil}%`, diff: Math.abs(normSoil - (baselineValues[0] ?? 55)) },
+    { label: '葉気温差 ΔT', raw: `${leafAirDiff > 0 ? '+' : ''}${leafAirDiff.toFixed(1)}℃`, diff: Math.abs(normDiff - (baselineValues[3] ?? 45)) },
+    { label: '照度環境', raw: `${lux} Lux`, diff: Math.abs(normLux - luxBaseline) },
+    { label: '土壌変化率', raw: `${soilRate.toFixed(0)}/h`, diff: Math.abs(normSoilRate - (baselineValues[7] ?? 50)) },
   ];
 
   return (

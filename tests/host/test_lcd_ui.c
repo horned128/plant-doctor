@@ -262,6 +262,88 @@ static void Test_LcdUiShowDiagnosisPage(void) {
     TEST_ASSERT_EQUAL_STRING("HEAT STRESS     ", s_lcdMockLine2);
 }
 
+/** =================================================================*
+ * @brief  全エラー表示行が16文字以内であることの検証
+ * ================================================================= */
+static void Test_AllErrorStringsLength(void) {
+    char line1[32];
+    char line2[32];
+    int err;
+
+    for (err = (int)PLANT_DOCTOR_ERROR_NONE; err <= (int)PLANT_DOCTOR_ERROR_ACTUATOR; ++err) {
+        memset(line1, 0, sizeof(line1));
+        memset(line2, 0, sizeof(line2));
+        LcdUi_FormatError((PLANT_DOCTOR_ERROR)err, line1, line2, sizeof(line1));
+        TEST_ASSERT_TRUE(strlen(line1) <= 16U);
+        TEST_ASSERT_TRUE(strlen(line1) > 0U);
+        TEST_ASSERT_TRUE(strlen(line2) <= 16U);
+        TEST_ASSERT_TRUE(strlen(line2) > 0U);
+        TEST_ASSERT_EQUAL_STRING("PLANT DOCTOR", line1);
+    }
+}
+
+/** =================================================================*
+ * @brief  各エラーメッセージ内容の正確性検証
+ * ================================================================= */
+static void Test_ErrorFormattingDetails(void) {
+    char line1[32];
+    char line2[32];
+
+    LcdUi_FormatError(PLANT_DOCTOR_ERROR_POWER, line1, line2, sizeof(line1));
+    TEST_ASSERT_EQUAL_STRING("ERROR POWER", line2);
+
+    LcdUi_FormatError(PLANT_DOCTOR_ERROR_TIMER, line1, line2, sizeof(line1));
+    TEST_ASSERT_EQUAL_STRING("ERROR TIMER", line2);
+
+    LcdUi_FormatError(PLANT_DOCTOR_ERROR_SWITCH, line1, line2, sizeof(line1));
+    TEST_ASSERT_EQUAL_STRING("ERROR SWITCH", line2);
+
+    LcdUi_FormatError(PLANT_DOCTOR_ERROR_LCD_INIT, line1, line2, sizeof(line1));
+    TEST_ASSERT_EQUAL_STRING("ERROR LCD", line2);
+
+    LcdUi_FormatError(PLANT_DOCTOR_ERROR_LCD_IO, line1, line2, sizeof(line1));
+    TEST_ASSERT_EQUAL_STRING("ERROR LCD", line2);
+
+    LcdUi_FormatError(PLANT_DOCTOR_ERROR_TICK_OVERFLOW, line1, line2, sizeof(line1));
+    TEST_ASSERT_EQUAL_STRING("ERROR TIMING", line2);
+
+    LcdUi_FormatError(PLANT_DOCTOR_ERROR_SENSOR_INTERFACE, line1, line2, sizeof(line1));
+    TEST_ASSERT_EQUAL_STRING("ERROR SENSOR", line2);
+
+    LcdUi_FormatError(PLANT_DOCTOR_ERROR_STORAGE_INTERFACE, line1, line2, sizeof(line1));
+    TEST_ASSERT_EQUAL_STRING("ERROR STORAGE", line2);
+
+    LcdUi_FormatError(PLANT_DOCTOR_ERROR_AI, line1, line2, sizeof(line1));
+    TEST_ASSERT_EQUAL_STRING("ERROR AI", line2);
+
+    LcdUi_FormatError(PLANT_DOCTOR_ERROR_ACTUATOR, line1, line2, sizeof(line1));
+    TEST_ASSERT_EQUAL_STRING("ERROR PUMP", line2);
+
+    LcdUi_FormatError(PLANT_DOCTOR_ERROR_NONE, line1, line2, sizeof(line1));
+    TEST_ASSERT_EQUAL_STRING("ERROR UNKNOWN", line2);
+}
+
+/** =================================================================*
+ * @brief  LcdUi_ShowErrorによるLCD描画および未初期化時自動初期化の検証
+ * ================================================================= */
+static void Test_LcdUiShowError(void) {
+    memset(s_lcdMockLine1, 0, sizeof(s_lcdMockLine1));
+    memset(s_lcdMockLine2, 0, sizeof(s_lcdMockLine2));
+
+    TEST_ASSERT_TRUE(LcdUi_ShowError(PLANT_DOCTOR_ERROR_SENSOR_INTERFACE));
+    TEST_ASSERT_EQUAL_STRING("PLANT DOCTOR    ", s_lcdMockLine1);
+    TEST_ASSERT_EQUAL_STRING("ERROR SENSOR    ", s_lcdMockLine2);
+
+    TEST_ASSERT_TRUE(LcdUi_ShowError(PLANT_DOCTOR_ERROR_AI));
+    TEST_ASSERT_EQUAL_STRING("ERROR AI        ", s_lcdMockLine2);
+
+    TEST_ASSERT_TRUE(LcdUi_ShowError(PLANT_DOCTOR_ERROR_ACTUATOR));
+    TEST_ASSERT_EQUAL_STRING("ERROR PUMP      ", s_lcdMockLine2);
+
+    TEST_ASSERT_TRUE(LcdUi_ShowError(PLANT_DOCTOR_ERROR_POWER));
+    TEST_ASSERT_EQUAL_STRING("ERROR POWER     ", s_lcdMockLine2);
+}
+
 int main(void) {
     TEST_RUN(Test_AllStatusStringsLength);
     TEST_RUN(Test_AllSoilTrendStringsLength);
@@ -270,5 +352,8 @@ int main(void) {
     TEST_RUN(Test_ProjectDemosDisplay);
     TEST_RUN(Test_RawSensorsPage2);
     TEST_RUN(Test_LcdUiShowDiagnosisPage);
+    TEST_RUN(Test_AllErrorStringsLength);
+    TEST_RUN(Test_ErrorFormattingDetails);
+    TEST_RUN(Test_LcdUiShowError);
     TEST_REPORT_AND_EXIT();
 }

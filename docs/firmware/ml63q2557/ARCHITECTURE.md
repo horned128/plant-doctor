@@ -157,10 +157,13 @@ LCDは16文字×2行です。文字列は`ui/LcdUi.c`で生成し、短い文字
 | `ERROR LCD` | `PLANT_DOCTOR_ERROR_LCD_INIT` / `PLANT_DOCTOR_ERROR_LCD_IO` | LCDの初期化または通信失敗。 |
 | `ERROR TIMING` | `PLANT_DOCTOR_ERROR_TICK_OVERFLOW` | mainループがTickを処理しきれず、Tickがあふれた。 |
 | `ERROR SENSOR` | `PLANT_DOCTOR_ERROR_SENSOR_INTERFACE` | センサー初期化の失敗。 |
+| `ERROR AI` | `PLANT_DOCTOR_ERROR_AI` | AIアクセラレータ・植物AIの初期化失敗。 |
+| `ERROR PUMP` | `PLANT_DOCTOR_ERROR_ACTUATOR` | 給水ポンプ等のアクチュエータ初期化失敗。 |
 | `ERROR STORAGE` | `PLANT_DOCTOR_ERROR_STORAGE_INTERFACE` | 記録機能の初期化失敗。 |
 | `ERROR UNKNOWN` | `PLANT_DOCTOR_ERROR_NONE`または未定義値 | エラー種別を特定できない。 |
 
 `ERROR`中はLED1とLED3が同じ位相、LED2が反対位相で250 msごとに交互点滅します。
+初期化エラーにより起動できない場合でも、LCDが未初期化であれば自動的に初期化を試行して上記のエラーメッセージをLCDに表示します。
 
 ## 給水制御と将来拡張の境界
 

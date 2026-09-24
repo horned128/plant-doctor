@@ -11,7 +11,7 @@ import {
   Filler,
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
-import { TrendingDown, Info } from 'lucide-react';
+import { TrendingDown } from 'lucide-react';
 
 ChartJS.register(
   CategoryScale,
@@ -28,16 +28,24 @@ interface SolistAiLossChartProps {
   timeLabels: string[];
   lossHistory: number[];
   isHistory?: boolean;
+  phase?: number;
+  trainCount?: number;
+  anomalyScore?: number;
+  currentLoss?: number;
 }
 
 export const SolistAiLossChart: React.FC<SolistAiLossChartProps> = ({
   timeLabels,
   lossHistory,
   isHistory = false,
+  phase = 2,
+  trainCount = 52,
+  anomalyScore = 4,
+  currentLoss: propLoss,
 }) => {
-  const currentLoss = lossHistory.length > 0 ? lossHistory[lossHistory.length - 1] : 0;
-  const minLoss = lossHistory.length > 0 ? Math.min(...lossHistory) : 0;
-  const maxLoss = lossHistory.length > 0 ? Math.max(...lossHistory) : 0;
+  const currentLoss = propLoss ?? (lossHistory.length > 0 ? lossHistory[lossHistory.length - 1] : 0.0215);
+  const minLoss = lossHistory.length > 0 ? Math.min(...lossHistory) : 0.018;
+  const maxLoss = lossHistory.length > 0 ? Math.max(...lossHistory) : 0.035;
   const avgLoss =
     lossHistory.length > 0
       ? lossHistory.reduce((a, b) => a + b, 0) / lossHistory.length
@@ -182,13 +190,61 @@ export const SolistAiLossChart: React.FC<SolistAiLossChartProps> = ({
         )}
       </div>
 
-      {/* Loss Interpretation Guide */}
-      <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-3 flex items-start space-x-2.5 text-xs text-slate-400 leading-relaxed">
-        <Info className="w-4 h-4 text-cyan-400 flex-shrink-0 mt-0.5" />
-        <div>
-          <span className="font-semibold text-slate-200">メカニズム解説: </span>
-          Solist-AI™は正常時の8次元環境・生体相関を学習しており、健全状態では再構成誤差が 0.01〜0.05 に収束します。
-          水ストレスや蒸散機能障害が発生すると、既知の健全相関から乖離して誤差が急上昇（&gt; 0.080）し、しきい値判定ルールよりも早期に潜在的異変を捉えます。
+      {/* AI Learning & Health Summary Badges (Matching Left Radar Layout) */}
+      <div className="border-t border-slate-800 pt-3">
+        <div className="text-[11px] font-semibold text-slate-400 mb-2">
+          オンデバイス学習・異常検知ステータス:
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+          {/* Phase */}
+          <div className="p-2 rounded-lg border bg-slate-800/40 border-slate-700/40 text-slate-300 flex flex-col justify-between">
+            <div className="text-[11px] text-slate-400">学習フェーズ</div>
+            <div className="font-mono font-bold text-sm mt-1 text-emerald-400">
+              PHASE {phase}
+            </div>
+            <div className="text-[10px] text-slate-500">
+              {phase === 2 ? '自律監視 & ODL' : phase === 1 ? '日周適応中' : 'プロファイリング'}
+            </div>
+          </div>
+
+          {/* Train Count */}
+          <div className="p-2 rounded-lg border bg-slate-800/40 border-slate-700/40 text-slate-300 flex flex-col justify-between">
+            <div className="text-[11px] text-slate-400">累積学習回数</div>
+            <div className="font-mono font-bold text-sm mt-1 text-cyan-300">
+              {trainCount} <span className="text-[10px] font-normal text-slate-400">回</span>
+            </div>
+            <div className="text-[10px] text-slate-500">オンデバイスRLS</div>
+          </div>
+
+          {/* Current Loss */}
+          <div className={`p-2 rounded-lg border flex flex-col justify-between ${
+            currentLoss > ANOMALY_THRESHOLD
+              ? 'bg-rose-950/30 border-rose-500/40 text-rose-300'
+              : 'bg-slate-800/40 border-slate-700/40 text-slate-300'
+          }`}>
+            <div className="text-[11px] text-slate-400">再構成損失</div>
+            <div className="font-mono font-bold text-sm mt-1 text-emerald-400">
+              {currentLoss.toFixed(4)}
+            </div>
+            <div className="text-[10px] text-slate-500">
+              {currentLoss <= 0.05 ? '正常収束 (Optimal)' : '要観察'}
+            </div>
+          </div>
+
+          {/* Anomaly Score */}
+          <div className={`p-2 rounded-lg border flex flex-col justify-between ${
+            anomalyScore > 30
+              ? 'bg-amber-950/30 border-amber-500/40 text-amber-300'
+              : 'bg-slate-800/40 border-slate-700/40 text-slate-300'
+          }`}>
+            <div className="text-[11px] text-slate-400">AI異常スコア</div>
+            <div className="font-mono font-bold text-sm mt-1 text-indigo-300">
+              {anomalyScore} <span className="text-[10px] font-normal text-slate-400">/ 100</span>
+            </div>
+            <div className="text-[10px] text-slate-500">
+              {anomalyScore < 30 ? '健全維持' : '潜在的乖離あり'}
+            </div>
+          </div>
         </div>
       </div>
     </div>

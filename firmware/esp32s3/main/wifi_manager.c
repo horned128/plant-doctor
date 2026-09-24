@@ -19,6 +19,21 @@ static bool s_connected = false;
 static char s_ip_str[32] = {0};
 static int s_retry_num = 0;
 
+static void start_services_task(void *pvParameters) {
+    (void)pvParameters;
+    /* Start mDNS service */
+    mdns_init();
+    mdns_hostname_set(CONFIG_MDNS_HOST_NAME);
+    mdns_instance_name_set("Plant Doctor Gateway");
+    mdns_service_add("PlantDoctor", "_http", "_tcp", 80, NULL, 0);
+    ESP_LOGI(TAG, "mDNS responder started: http://%s.local", CONFIG_MDNS_HOST_NAME);
+
+    /* Start HTTP & WebSocket server after IP is acquired */
+    web_server_start();
+
+    vTaskDelete(NULL);
+}
+
 static void wifi_event_handler(void* arg, esp_event_base_t event_base,
                                 int32_t event_id, void* event_data) {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
@@ -46,15 +61,8 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
         s_retry_num = 0;
         led_indicator_set_state(LED_STATE_OK);
 
-        /* Start mDNS service */
-        mdns_init();
-        mdns_hostname_set(CONFIG_MDNS_HOST_NAME);
-        mdns_instance_name_set("Plant Doctor Gateway");
-        mdns_service_add("PlantDoctor", "_http", "_tcp", 80, NULL, 0);
-        ESP_LOGI(TAG, "mDNS responder started: http://%s.local", CONFIG_MDNS_HOST_NAME);
-
-        /* Start HTTP & WebSocket server after IP is acquired */
-        web_server_start();
+        /* Offload heavy mDNS and Web server initialization from sys_evt to avoid stack overflow */
+        xTaskCreate(start_services_task, "start_srv", 4096, NULL, 5, NULL);
     }
 }
 

@@ -20,6 +20,8 @@
 #define SOLIST_AI_BUSY_TIMEOUT_LOOPS       (50000UL)
 static bool s_solistAiInitialized = false;
 static bfloat16 s_solistAiInput[SOLIST_AI_FEATURE_DIM];
+static ODL_Parameters s_solistAiParams;
+static uint8_t s_solistAiDivergenceCount = 0U;
 #endif
 #include <stddef.h>                                         /* NULL定義 */
 #include <string.h>                                         /* memcpy定義 */
@@ -108,19 +110,19 @@ bool PlantAi_Init(void) {
     for (volatile uint32_t d = 0U; d < 1000U; d++) {
         __NOP();
     }
-    ODL_Parameters params;
-    params.inputSize = SOLIST_AI_FEATURE_DIM;
-    params.hiddenSize = 64U;
-    params.outputSize = SOLIST_AI_FEATURE_DIM;
-    params.forgettingFactor = 0x3F73; /* 0.95 (bfloat16) */
-    params.activationFunction = ODL_ACTV_SIGMOID;
-    params.lossFunction = ODL_LOSS_MSE;
-    params.seed = 1U;
-    params.scaleAlpha = 0x3F80;       /* 1.0 (bfloat16) */
-    params.scaleGamma = 0;
-    params.leakRate = 0;
-    OSUAD_Initialize(&params, 1U);
+    s_solistAiParams.inputSize = SOLIST_AI_FEATURE_DIM;
+    s_solistAiParams.hiddenSize = 64U;
+    s_solistAiParams.outputSize = SOLIST_AI_FEATURE_DIM;
+    s_solistAiParams.forgettingFactor = 0x3F80; /* 1.0 (bfloat16) - prevents RLS covariance wind-up */
+    s_solistAiParams.activationFunction = ODL_ACTV_SIGMOID;
+    s_solistAiParams.lossFunction = ODL_LOSS_MSE;
+    s_solistAiParams.seed = 1U;
+    s_solistAiParams.scaleAlpha = 0x3F80;       /* 1.0 (bfloat16) */
+    s_solistAiParams.scaleGamma = 0;
+    s_solistAiParams.leakRate = 0;
+    OSUAD_Initialize(&s_solistAiParams, 1U);
     s_solistAiInitialized = true;
+    s_solistAiDivergenceCount = 0U;
 #endif
 
     return true;
@@ -233,8 +235,12 @@ void PlantAi_Process10Ms(void) {
                 float fLoss = 0.0f;
                 uint32_t rawLoss32 = ((uint32_t)(uint16_t)loss) << 16;
                 memcpy(&fLoss, &rawLoss32, sizeof(float));
-                if (fLoss < 0.0f) fLoss = 0.0f;
-                if (fLoss > 1.0f) fLoss = 1.0f;
+                /* Guard against NaN / Inf (exponent bits all 1) */
+                if (((rawLoss32 & 0x7F800000UL) == 0x7F800000UL) || (fLoss > 1.0f)) {
+                    fLoss = 1.0f;
+                } else if (fLoss < 0.0f) {
+                    fLoss = 0.0f;
+                }
                 s_solistAiLatestLossPpm = (uint16_t)(fLoss * 10000.0f);
 
                 /* 平常時（健康状態かつ低ストレスかつセンサ正常）にオンデバイス学習 */
@@ -244,6 +250,16 @@ void PlantAi_Process10Ms(void) {
                     healthReport.airHumHealth == SENSOR_HEALTH_OK &&
                     healthReport.luxHealth == SENSOR_HEALTH_OK &&
                     s_stressScore < 30U) {
+                    /* 数値発散ウォッチドッグ: 健全時に損失1.0が10周期連続した場合は自律リセット */
+                    if (fLoss >= 1.0f) {
+                        if (++s_solistAiDivergenceCount >= 10U) {
+                            OSUAD_Initialize(&s_solistAiParams, 1U);
+                            s_solistAiDivergenceCount = 0U;
+                            s_solistAiLatestLossPpm = 250U;
+                        }
+                    } else {
+                        s_solistAiDivergenceCount = 0U;
+                    }
                     OSUAD_StartTrain(0U, s_solistAiInput);
                     waitLoops = SOLIST_AI_BUSY_TIMEOUT_LOOPS;
                     while (OSUAD_IsBusy() && (waitLoops > 0UL)) {

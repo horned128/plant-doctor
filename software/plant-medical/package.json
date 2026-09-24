@@ -10,8 +10,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@types/plotly.js-dist-min": "^2.3.4",
     "chart.js": "^4.4.1",
     "lucide-react": "^0.300.0",
+    "plotly.js-dist-min": "^4.1.1",
     "react": "^18.2.0",
     "react-chartjs-2": "^5.2.0",
     "react-dom": "^18.2.0"

@@ -59,7 +59,34 @@ export type ConnectionState = 'connected' | 'connecting' | 'disconnected';
 
 export type HistoryRange = '10m' | '1h' | '6h' | '24h' | '7d' | 'all';
 
-export type ActiveTab = 'logs' | 'charts' | 'ai';
+export type ActiveTab = 'charts' | 'logs' | 'bio' | 'ai';
+
+export type TimeResolution = '1h' | '24h' | '7d' | '30d';
+
+export type PlantSpeciesType = 'spathiphyllum' | 'pothos' | 'custom';
+
+export interface PlantThresholds {
+  soilMinRaw: number;      // 乾燥側 (Raw値高い)
+  soilMaxRaw: number;      // 湿潤側 (Raw値低い)
+  tempMin: number;         // ℃
+  tempMax: number;         // ℃
+  luxMin: number;          // 好適下限 Lux
+  luxMax: number;          // 好適上限 Lux
+  wiltSensitivity: number; // 0-100 (水切れ・しおれ感度)
+}
+
+export interface PlantProfile {
+  id: string;
+  name: string;            // ユーザーによる愛称
+  species: PlantSpeciesType;
+  speciesNameJa: string;   // 表示名
+  description: string;
+  thresholds: PlantThresholds;
+  baselineFeatures: number[]; // 8次元基準モデル (0-100 normalized)
+  baselineLoss: number;
+  learnedSamples: number;
+  updatedAt: number;
+}
 
 export interface DatabaseStats {
   totalRecords: number;
@@ -68,3 +95,4 @@ export interface DatabaseStats {
   latestTime?: number;
   recording: boolean;
 }
+

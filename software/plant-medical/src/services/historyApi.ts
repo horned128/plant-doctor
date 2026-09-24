@@ -1,70 +1,82 @@
 import { HistorySampleRecord } from '../types';
 
 /**
- * Fetch 10-minute downsampled telemetry history from ATOMS3 Lite / Server
+ * Fetch 10-minute downsampled telemetry history accumulated on Server PC
+ * Reads directly from the server PC filesystem via /api/server-logs.
+ * No browser localStorage or IndexedDB is used.
  */
-export async function fetchServerHistory(gatewayHost: string): Promise<HistorySampleRecord[]> {
+export async function fetchServerHistory(_gatewayHost?: string): Promise<HistorySampleRecord[]> {
   try {
-    const res = await fetch(`http://${gatewayHost}/api/history`, {
-      method: 'GET',
-      headers: { 'Accept': 'application/json' },
-      signal: AbortSignal.timeout(4000),
-    });
-
-    if (!res.ok) {
-      throw new Error(`Server returned status ${res.status}`);
+    const res = await fetch('/api/server-logs');
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data) && data.length > 0) {
+        return data;
+      }
     }
-
-    const data = await res.json();
-    if (Array.isArray(data) && data.length > 0) {
-      return data;
-    }
-  } catch (err) {
-    console.warn('Server history fetch failed or unavailable, using fallback mock/cache:', err);
+  } catch (e) {
+    console.warn('[Server PC API] /api/server-logs unreachable, using fallback samples:', e);
   }
 
-  // If server is not reachable or empty, return realistic mock history for demonstration
-  return getCachedOrMockHistory();
+  // サーバ未起動時またはオフライン環境用のモック初期サンプル（ローカルストレージには保存しない）
+  return generateMockHistorySamples(72);
 }
 
 /**
- * Clear server history records
+ * サーバPC側の物理ファイル（plant_history.parquet, csv, json）に10分サンプリングレコードを自動追記保存
+ * ブラウザ側のlocalStorageやIndexedDBには一切書き込まず、サーバPCのディスクに直接永続化
  */
-export async function clearServerHistory(gatewayHost: string): Promise<boolean> {
+export async function saveServerHistorySample(record: HistorySampleRecord): Promise<void> {
   try {
-    const res = await fetch(`http://${gatewayHost}/api/history/clear`, {
+    await fetch('/api/server-logs', {
       method: 'POST',
-      signal: AbortSignal.timeout(3000),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(record),
+    });
+  } catch (e) {
+    console.error('[Server PC API] Failed to append sample to server PC storage:', e);
+  }
+}
+
+/**
+ * サーバPC上の物理ファイル（plant_history.parquet / csv / json）の蓄積ログを消去
+ */
+export async function clearServerHistory(_gatewayHost?: string): Promise<boolean> {
+  try {
+    const res = await fetch('/api/server-logs/clear', {
+      method: 'POST',
     });
     return res.ok;
   } catch (err) {
-    console.error('Failed to clear server history:', err);
+    console.error('[Server PC API] Failed to clear Server PC history files:', err);
     return false;
   }
 }
 
-const LOCAL_STORAGE_KEY = 'plant_doctor_10min_history_cache';
+/**
+ * サーバPC上のParquet実ファイルを直接ダウンロード
+ */
+export function downloadServerParquetFile(): void {
+  const link = document.createElement('a');
+  link.href = '/api/server-logs/download/parquet';
+  link.download = `plant_history_${new Date().toISOString().slice(0, 10)}.parquet`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
 
-function getCachedOrMockHistory(): HistorySampleRecord[] {
-  try {
-    const cached = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (cached) {
-      const parsed = JSON.parse(cached);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
-      }
-    }
-  } catch (e) {
-    console.warn(e);
-  }
-
-  const generated = generateMockHistorySamples(72); // 12 hours of 10-minute records
-  try {
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(generated));
-  } catch (e) {
-    // ignore
-  }
-  return generated;
+/**
+ * サーバPC上のCSV実ファイルを直接ダウンロード
+ */
+export function downloadServerCsvFile(): void {
+  const link = document.createElement('a');
+  link.href = '/api/server-logs/download/csv';
+  link.download = `plant_history_${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 }
 
 /**
@@ -76,7 +88,6 @@ export function generateMockHistorySamples(count: number = 72): HistorySampleRec
   const now = Math.floor(Date.now() / 1000);
   const intervalSec = 600; // 10 minutes
 
-  // Start from past to now
   const startTime = now - count * intervalSec;
 
   for (let i = 0; i < count; i++) {
@@ -86,41 +97,41 @@ export function generateMockHistorySamples(count: number = 72): HistorySampleRec
 
     // Diurnal temperature wave (peak around 14:00, trough around 05:00)
     const diurnal = Math.sin(((hour - 8) / 24) * 2 * Math.PI);
-    const air_temp = Number((22.0 + diurnal * 4.5 + (Math.random() - 0.5) * 0.4).toFixed(2));
-    const humidity = Number((60.0 - diurnal * 15.0 + (Math.random() - 0.5) * 2.0).toFixed(1));
-    const lux = Math.max(0, Math.round(500 * Math.sin(((hour - 6) / 12) * Math.PI) + (Math.random() - 0.5) * 50));
+    const air_temp = Number((22.5 + diurnal * 4.0 + (Math.random() - 0.5) * 0.3).toFixed(2));
+    const humidity = Number((58.0 - diurnal * 12.0 + (Math.random() - 0.5) * 1.5).toFixed(1));
+    const lux = Math.max(0, Math.round(480 * Math.sin(((hour - 6) / 12) * Math.PI) + (Math.random() - 0.5) * 40));
 
     // Soil moisture slowly decreasing until simulated watering around 4 hours ago
     const hoursAgo = (now - t) / 3600;
     let soil_raw = 1750;
     let pump_on = false;
     let status = 'HEALTHY';
-    let stress = 15;
+    let stress = 2; // 平常時は0〜5付近
 
     if (hoursAgo > 4.5 && hoursAgo < 6.0) {
       // Dry stress period before watering
       soil_raw = 2200 + Math.round((hoursAgo - 4.5) * 150);
-      stress = Math.min(65, Math.round(40 + (hoursAgo - 4.5) * 15));
+      stress = Math.min(65, Math.round(35 + (hoursAgo - 4.5) * 15));
       status = 'DRY_STRESS';
     } else if (hoursAgo >= 4.0 && hoursAgo <= 4.5) {
       // Watering event!
       soil_raw = 1800;
       pump_on = i % 2 === 0;
       status = 'WATERING';
-      stress = 20;
+      stress = 10;
     } else if (hoursAgo < 4.0) {
       // Post-watering healthy state
       soil_raw = 1650 + Math.round((4.0 - hoursAgo) * 35);
-      stress = 12 + Math.round(Math.random() * 6);
+      stress = 1 + Math.round(Math.random() * 4);
       status = 'HEALTHY';
     }
 
     // Leaf temp: active transpiration lowers leaf temp below air temp (healthy)
-    let leaf_air_diff = -0.6;
+    let leaf_air_diff = -0.7;
     if (status === 'DRY_STRESS') {
-      leaf_air_diff = +0.8; // Transpiration suppressed
+      leaf_air_diff = +0.6; // Transpiration suppressed
     } else if (lux > 300) {
-      leaf_air_diff = -1.2; // Vigorous transpiration
+      leaf_air_diff = -1.1; // Vigorous transpiration
     }
     const leaf_temp = Number((air_temp + leaf_air_diff).toFixed(2));
 
@@ -140,86 +151,13 @@ export function generateMockHistorySamples(count: number = 72): HistorySampleRec
       pump_on,
       demo_mode: false,
       ai_train_count: 50 + Math.floor(i / 2),
-      ai_loss: Number((0.022 + Math.exp(-i / 20) * 0.03 + (Math.random() - 0.5) * 0.002).toFixed(4)),
+      ai_loss: Number((0.021 + Math.exp(-i / 25) * 0.02 + (Math.random() - 0.5) * 0.001).toFixed(4)),
       ai_phase: 2,
-      ai_anomaly_score: stress > 50 ? 45 : 8,
-      leaf_temp_rate: Number(((Math.random() - 0.5) * 0.3).toFixed(2)),
+      ai_anomaly_score: stress > 50 ? 45 : 3,
+      leaf_temp_rate: Number(((Math.random() - 0.5) * 0.2).toFixed(2)),
       soil_rate: status === 'WATERING' ? 120 : status === 'DRY_STRESS' ? -35 : -10,
     });
   }
 
   return records;
-}
-
-/**
- * Export history records to CSV file
- */
-export function exportHistoryToCsv(records: HistorySampleRecord[], filename?: string): void {
-  const headers = [
-    'Timestamp',
-    'DateTime (JST)',
-    'Seq',
-    'Stress (0-100)',
-    'Status',
-    'SoilTrend',
-    'AirTemp (degC)',
-    'Humidity (%)',
-    'LeafTemp (degC)',
-    'DeltaT (degC)',
-    'SoilRaw (0-4095)',
-    'Lux',
-    'TankLiquid',
-    'PumpOn',
-    'AiTrainCount',
-    'AiLoss',
-    'AiPhase',
-    'AiAnomalyScore',
-  ];
-
-  const rows = records.map((r) => {
-    const d = new Date(r.timestamp * 1000);
-    const dateStr = d.toLocaleString('ja-JP', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    });
-
-    return [
-      r.timestamp,
-      `"${dateStr}"`,
-      r.seq,
-      r.stress,
-      r.status,
-      r.soil_trend,
-      r.air_temp.toFixed(2),
-      r.humidity.toFixed(1),
-      r.leaf_temp.toFixed(2),
-      r.leaf_air_diff.toFixed(2),
-      r.soil_raw,
-      r.lux,
-      r.tank_liquid ? 1 : 0,
-      r.pump_on ? 1 : 0,
-      r.ai_train_count ?? 0,
-      r.ai_loss?.toFixed(4) ?? '0.0000',
-      r.ai_phase ?? 0,
-      r.ai_anomaly_score ?? 0,
-    ].join(',');
-  });
-
-  const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\r\n');
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.setAttribute('href', url);
-  const name =
-    filename ||
-    `plant_doctor_10min_logs_${new Date().toISOString().slice(0, 10)}.csv`;
-  link.setAttribute('download', name);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
 }

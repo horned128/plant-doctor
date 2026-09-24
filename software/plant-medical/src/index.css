@@ -6,4 +6,43 @@
   .gauge-transition {
     transition: stroke-dashoffset 0.8s ease-in-out;
   }
+
+  /* 生体の呼吸パルス（植物がゆっくり息づくようなアニメーション） */
+  @keyframes bio-breathe {
+    0%, 100% {
+      transform: scale(1);
+      filter: drop-shadow(0 0 25px var(--glow-color, rgba(16, 185, 129, 0.2)));
+    }
+    50% {
+      transform: scale(1.018) translateY(-2px);
+      filter: drop-shadow(0 0 45px var(--glow-color, rgba(16, 185, 129, 0.38)));
+    }
+  }
+
+  .animate-bio-breathe {
+    animation: bio-breathe 6.5s ease-in-out infinite;
+  }
+
+  /* 蒸散パルス */
+  @keyframes transpiration-glow {
+    0%, 100% {
+      opacity: 0.4;
+    }
+    50% {
+      opacity: 0.9;
+    }
+  }
+
+  .animate-transpiration {
+    animation: transpiration-glow 3s ease-in-out infinite;
+  }
+
+  /* HUDグリッド背景 */
+  .bg-cockpit-grid {
+    background-image: 
+      radial-gradient(circle at 50% 35%, rgba(16, 185, 129, 0.08) 0%, transparent 60%),
+      linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+    background-size: 100% 100%, 32px 32px, 32px 32px;
+  }
 }

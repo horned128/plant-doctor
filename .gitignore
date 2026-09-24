@@ -12,6 +12,7 @@ RemoteSystemsTempFiles/
 **/Build/
 **/out/
 **/Output/
+**/dist/
 
 # Local CMake and toolchain overrides
 CMakeUserPresets.json
@@ -34,3 +35,5 @@ dependencies.lock
 
 # plant-medical
 **/node_modules/
+software/plant-medical/data/*
+!software/plant-medical/data/.gitkeep

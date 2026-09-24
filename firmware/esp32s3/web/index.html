@@ -188,47 +188,13 @@
             </div>
         </div>
 
-        <!-- 10-Minute Server History Logs Section -->
-        <div class="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60 space-y-4">
-            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-3 border-b border-slate-700/60">
-                <div>
-                    <h3 class="text-sm font-bold text-white flex items-center gap-2">
-                        📋 サーバ保存 10分サンプリング履歴ログ
-                        <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-950 text-indigo-400 border border-indigo-800">Server Memory</span>
-                    </h3>
-                    <p class="text-xs text-slate-400">ATOMS3 Liteに保存された10分間隔のサンプリング値</p>
-                </div>
-                <div class="flex items-center space-x-2">
-                    <button onclick="fetchHistory()" class="text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-1.5 rounded-lg transition">
-                        🔄 更新
-                    </button>
-                    <button onclick="downloadHistoryCsv()" class="text-xs bg-emerald-700 hover:bg-emerald-600 text-white font-bold px-3 py-1.5 rounded-lg transition">
-                        ⬇️ CSV出力
-                    </button>
-                </div>
+        <!-- Server PC Logging Notice Banner -->
+        <div class="bg-slate-800/40 rounded-xl p-3.5 border border-slate-700/50 flex items-center justify-between text-xs text-slate-400">
+            <div class="flex items-center space-x-2">
+                <span class="text-base">🖥️</span>
+                <span><strong>サンプリング履歴ログ</strong>: ATOMS3 Lite内には蓄積されず、サーバPC（Plant Medical Station）側に自動保存・Parquet形式で蓄積されます。</span>
             </div>
-
-            <div class="overflow-x-auto rounded-xl border border-slate-700/60">
-                <table class="w-full text-left text-xs border-collapse">
-                    <thead>
-                        <tr class="bg-slate-900/80 text-slate-400 text-[11px] border-b border-slate-700/60">
-                            <th class="p-2.5">日時 (JST)</th>
-                            <th class="p-2.5">状態</th>
-                            <th class="p-2.5">ストレス</th>
-                            <th class="p-2.5">気温 / 湿度</th>
-                            <th class="p-2.5">葉温 (&Delta;T)</th>
-                            <th class="p-2.5">土壌Raw</th>
-                            <th class="p-2.5">照度</th>
-                            <th class="p-2.5">AI Loss</th>
-                        </tr>
-                    </thead>
-                    <tbody id="history-tbody" class="divide-y divide-slate-700/40 font-mono">
-                        <tr>
-                            <td colspan="8" class="p-4 text-center text-slate-500 font-sans">履歴を読み込み中...</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
+            <span class="text-[10px] px-2 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-800 font-mono">Server PC Logging</span>
         </div>
 
         <!-- Charts Section -->
@@ -464,77 +430,7 @@
             soilChart.update('none');
         }
 
-        async function fetchHistory() {
-            try {
-                const res = await fetch('/api/history');
-                if (res.ok) {
-                    const data = await res.json();
-                    if (Array.isArray(data)) {
-                        cachedHistoryRecords = data;
-                        renderHistoryTable(data);
-                    }
-                }
-            } catch(e) {
-                console.warn('Failed to fetch /api/history', e);
-            }
-        }
 
-        function renderHistoryTable(records) {
-            const tbody = document.getElementById('history-tbody');
-            if (!records || records.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="8" class="p-4 text-center text-slate-500 font-sans">10分サンプリングログはまだ記録されていません。</td></tr>';
-                return;
-            }
-
-            const rows = [...records].reverse().slice(0, 30).map(r => {
-                const d = new Date(r.timestamp * 1000);
-                const timeStr = `${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getDate().toString().padStart(2,'0')} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
-                const diffSign = r.leaf_air_diff >= 0 ? '+' : '';
-                return `
-                    <tr class="hover:bg-slate-700/30">
-                        <td class="p-2.5 text-slate-300 font-sans">${timeStr}</td>
-                        <td class="p-2.5 font-sans"><span class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700">${r.status}</span></td>
-                        <td class="p-2.5 font-bold text-white">${r.stress}</td>
-                        <td class="p-2.5 text-slate-300">${r.air_temp.toFixed(1)}&deg;C / ${r.humidity.toFixed(0)}%</td>
-                        <td class="p-2.5 text-emerald-400">${r.leaf_temp.toFixed(1)}&deg;C <span class="text-[10px] text-teal-400">(${diffSign}${r.leaf_air_diff.toFixed(2)})</span></td>
-                        <td class="p-2.5 text-slate-300">${r.soil_raw}</td>
-                        <td class="p-2.5 text-amber-300">${r.lux} lx</td>
-                        <td class="p-2.5 text-slate-400">${r.ai_loss !== undefined ? r.ai_loss.toFixed(4) : '--'}</td>
-                    </tr>
-                `;
-            }).join('');
-
-            tbody.innerHTML = rows;
-        }
-
-        function downloadHistoryCsv() {
-            if (!cachedHistoryRecords || cachedHistoryRecords.length === 0) {
-                alert('出力可能な履歴データがありません。');
-                return;
-            }
-            const headers = ['Timestamp', 'DateTime', 'Stress', 'Status', 'AirTemp', 'Humidity', 'LeafTemp', 'DeltaT', 'SoilRaw', 'Lux', 'AiLoss'];
-            const rows = cachedHistoryRecords.map(r => [
-                r.timestamp,
-                new Date(r.timestamp * 1000).toISOString(),
-                r.stress,
-                r.status,
-                r.air_temp,
-                r.humidity,
-                r.leaf_temp,
-                r.leaf_air_diff,
-                r.soil_raw,
-                r.lux,
-                r.ai_loss
-            ]);
-            const csv = '\uFEFF' + [headers.join(','), ...rows.map(e => e.join(','))].join('\r\n');
-            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `plant_doctor_history_${new Date().toISOString().slice(0, 10)}.csv`;
-            a.click();
-            URL.revokeObjectURL(url);
-        }
 
         function triggerWatering() {
             if (ws && ws.readyState === WebSocket.OPEN) {

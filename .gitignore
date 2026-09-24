@@ -37,3 +37,4 @@ dependencies.lock
 **/node_modules/
 software/plant-medical/data/*
 !software/plant-medical/data/.gitkeep
+.agents/*

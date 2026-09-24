@@ -217,7 +217,7 @@ void PlantAi_Process10Ms(void) {
             rawFeatures[2] = NormalizeToQ8(snapshot.airTemperatureCentiC, 1000, 4000);
             rawFeatures[3] = NormalizeToQ8(s_featureVector.leafAirTemperatureDelta, -400, 200);
             rawFeatures[4] = NormalizeToQ8(snapshot.relativeHumidityCentiPercent, 2000, 10000);
-            rawFeatures[5] = NormalizeToQ8(snapshot.illuminanceRaw, 0, 2000);
+            rawFeatures[5] = NormalizeToQ8(snapshot.illuminanceRaw, 0, 6000);
             rawFeatures[6] = NormalizeToQ8(s_featureVector.leafTemperatureRatePerHour, -500, 500);
             rawFeatures[7] = NormalizeToQ8(s_featureVector.soilMoistureRatePerHour, -200, 200);
 
@@ -244,12 +244,26 @@ void PlantAi_Process10Ms(void) {
                 s_solistAiLatestLossPpm = (uint16_t)(fLoss * 10000.0f);
 
                 /* 平常時（健康状態かつ低ストレスかつセンサ正常）にオンデバイス学習 */
+                /* 初期プロファイリング(100回未満)は起動直後の積算照度立ち上がりや日常微乾燥を考慮して
+                 * 総合閾値を50に緩和。ただし致命的な土壌乾燥や熱ストレス（部分スコア>=40）が
+                 * 発生している場合は絶対に学習させない多層防御インターロックを適用。 */
+                bool isSafeToTrain = false;
                 if (s_diagnosisState.status == PLANT_STATUS_HEALTHY &&
                     healthReport.soilHealth == SENSOR_HEALTH_OK &&
                     healthReport.leafHealth == SENSOR_HEALTH_OK &&
                     healthReport.airHumHealth == SENSOR_HEALTH_OK &&
-                    healthReport.luxHealth == SENSOR_HEALTH_OK &&
-                    s_stressScore < 30U) {
+                    healthReport.luxHealth == SENSOR_HEALTH_OK) {
+                    if (s_stressScore < 30U) {
+                        isSafeToTrain = true;
+                    } else if ((s_solistAiTrainCount < 100U) &&
+                               (s_stressScore < 50U) &&
+                               (stressOutput.soilPartialScore < 40U) &&
+                               (stressOutput.heatPartialScore < 40U)) {
+                        isSafeToTrain = true;
+                    }
+                }
+
+                if (isSafeToTrain) {
                     /* 数値発散ウォッチドッグ: 健全時に損失1.0が10周期連続した場合は自律リセット */
                     if (fLoss >= 1.0f) {
                         if (++s_solistAiDivergenceCount >= 10U) {

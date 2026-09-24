@@ -61,7 +61,26 @@ export type HistoryRange = '10m' | '1h' | '6h' | '24h' | '7d' | 'all';
 
 export type ActiveTab = 'charts' | 'logs' | 'bio' | 'ai';
 
-export type TimeResolution = '1h' | '24h' | '7d' | '30d';
+export type TimeResolution = '1h' | '24h' | '7d' | '30d' | 'custom';
+
+export interface CustomDateRange {
+  startDate: string; // YYYY-MM-DD
+  startHour: number; // 0-23
+  endDate: string;   // YYYY-MM-DD
+  endHour: number;   // 0-23
+  singleDayOnly?: boolean; // 1日単位（開始日のみ）
+}
+
+export interface WateringEventLog {
+  id: string;
+  timestamp: number; // unix seconds
+  durationSec: number;
+  success: boolean;
+  trigger: 'manual' | 'auto';
+  reason?: string;
+  soilBefore?: number;
+  soilAfter?: number;
+}
 
 export type PlantSpeciesType = 'spathiphyllum' | 'pothos' | 'custom';
 
@@ -95,4 +114,3 @@ export interface DatabaseStats {
   latestTime?: number;
   recording: boolean;
 }
-

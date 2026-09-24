@@ -59,14 +59,14 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
           <div>
             <div className="flex items-center gap-1.5">
               <h1 className="text-sm font-black tracking-tight text-white uppercase">
-                Plant Doctor
+                Plant Medical
               </h1>
               <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">
-                COCKPIT
+                CLINIC
               </span>
             </div>
-            <p className="text-[10px] text-slate-400 font-mono hidden sm:block">
-              ROHM ML63Q2557 &times; Solist-AI™
+            <p className="text-[10px] text-slate-400 font-sans hidden sm:block">
+              植物医療・生体診察ステーション
             </p>
           </div>
         </div>

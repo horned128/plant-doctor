@@ -73,16 +73,16 @@ export const SolistAiFeatureRadar: React.FC<SolistAiFeatureRadarProps> = ({
   const normHum = clamp(Math.round(((humidity - 20) / 80) * 100), 0, 100);
 
   // 6. Lux: 植物好適光量ゾーン（不感帯）を考慮した落とし込み
-  // 室内照明（200〜800 Lux）は植物にとって快適な光合成光量であるため、50（適正中央）付近に収斂。
-  // 人間の生活照明の点灯/消灯ノイズで異常判定されないよう、好適帯は 45〜55% に落ち着かせ、
-  // <50 Lux（日照不足）や >1500 Lux（直射日光・葉焼け）のみをストレスとして表現。
+  // 室内生活照明（100〜5000 Lux）は植物にとって好適な光合成光量ゾーンとして 45〜55%（適正中央50付近）に収斂。
+  // 部屋の照明の点灯/消灯（3000 Lux等）で異常判定されないよう不感帯とし、
+  // <100 Lux（日照不足）や >5000 Lux（直射日光・葉焼け）のみを有意な変化として表現。
   let normLux = 50;
-  if (lux < 200) {
-    normLux = clamp(Math.round((lux / 200) * 45), 5, 45);
-  } else if (lux <= 850) {
-    normLux = clamp(Math.round(45 + ((lux - 200) / 650) * 10), 45, 55);
+  if (lux < 100) {
+    normLux = clamp(Math.round((lux / 100) * 45), 5, 45);
+  } else if (lux <= 5000) {
+    normLux = clamp(Math.round(45 + ((lux - 100) / 4900) * 10), 45, 55);
   } else {
-    normLux = clamp(Math.round(55 + ((lux - 850) / 1150) * 45), 55, 100);
+    normLux = clamp(Math.round(55 + ((lux - 5000) / 5000) * 45), 55, 100);
   }
 
   // 7. Leaf Temp Rate (-5C/h -> 0, 0C/h -> 50, +5C/h -> 100)

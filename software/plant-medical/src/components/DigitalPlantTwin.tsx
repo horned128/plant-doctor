@@ -256,6 +256,7 @@ export const DigitalPlantTwin: React.FC<DigitalPlantTwinProps> = ({
             <div className="flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 shadow-lg shadow-emerald-500/10">
               <CheckCircle2 className="w-3.5 h-3.5" />
               <span>平常健常 (Healthy Twin)</span>
+              <span>平常健常 (良好)</span>
             </div>
           )}
         </div>
@@ -491,6 +492,7 @@ export const DigitalPlantTwin: React.FC<DigitalPlantTwinProps> = ({
         <span className="flex items-center gap-1.5 font-medium text-slate-300">
           <Waves className="w-3.5 h-3.5 text-teal-400" />
           <span>植物生体デジタルツイン (Digital Twin)</span>
+          <span>植物の生体状態 (生命バイオリズム)</span>
         </span>
         <span className="text-slate-500 font-mono text-[10px]">
           タップで反応 &bull; 土壌Raw: {soilRaw}

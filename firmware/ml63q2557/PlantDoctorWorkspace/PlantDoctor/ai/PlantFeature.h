@@ -20,7 +20,7 @@
 
 #define PLANT_FEATURE_BUFFER_SIZE              (60U)
 #define PLANT_FEATURE_MINUTE_HISTORY_SIZE      (60U)
-#define PLANT_FEATURE_ACCUM_HOURS              (12U)
+#define PLANT_FEATURE_ACCUM_HOURS              (24U)
 
 typedef struct {
     int32_t soilMoisturePermille;                           /* 校正後の相対湿り度 0〜1000 */

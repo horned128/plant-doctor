@@ -19,13 +19,18 @@ function serverFileLoggingPlugin(): Plugin {
       if (fs.existsSync(jsonPath)) {
         const raw = fs.readFileSync(jsonPath, 'utf-8');
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) return parsed;
+        if (Array.isArray(parsed)) {
+          return parsed
+            .filter((r) => typeof r.timestamp === 'number' && r.timestamp > 1000000000)
+            .sort((a, b) => a.timestamp - b.timestamp);
+        }
       }
     } catch (e) {
       console.error('[Server PC Log] Error loading records:', e);
     }
     return [];
   }
+
 
   function saveRecordsToFiles(records: any[]) {
     try {
@@ -167,15 +172,22 @@ function serverFileLoggingPlugin(): Plugin {
           req.on('end', () => {
             try {
               const record = JSON.parse(body);
+              if (typeof record.timestamp !== 'number' || record.timestamp <= 1000000000) {
+                res.statusCode = 400;
+                res.end(JSON.stringify({ error: 'Invalid or missing unix timestamp (> 1000000000)' }));
+                return;
+              }
               const records = loadRecords();
               // Prevent duplicate timestamps
               if (!records.some((r) => r.timestamp === record.timestamp)) {
                 records.push(record);
+                records.sort((a, b) => a.timestamp - b.timestamp);
                 saveRecordsToFiles(records);
               }
               res.setHeader('Content-Type', 'application/json');
               res.setHeader('Access-Control-Allow-Origin', '*');
               res.end(JSON.stringify({ status: 'ok', count: records.length, saved_to: dataDir }));
+
             } catch (e: any) {
               res.statusCode = 400;
               res.end(JSON.stringify({ error: e?.message || 'Invalid JSON' }));

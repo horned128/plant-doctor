@@ -1,5 +1,5 @@
 import React from 'react';
-import { Cpu, AlertCircle, CheckCircle2, ShieldCheck, ArrowRight, Flame, Droplets, Sparkles } from 'lucide-react';
+import { Cpu, AlertCircle, CheckCircle2, ShieldCheck, ArrowRight, Flame, Droplets, Sparkles, SunMedium } from 'lucide-react';
 
 interface AiDiagnosisPanelProps {
   status: string;
@@ -95,6 +95,17 @@ const STATUS_CONFIGS: Record<
     badgeBg: 'bg-purple-950/80 text-purple-400 border-purple-700/60',
     border: 'border-purple-800/40',
   },
+  LOW_LIGHT: {
+    title: '日照不足 (Low Light)',
+    sub: '受光量欠乏・暗黒継続',
+    desc: '24時間の積算受光量が不足しています（100 Lux未満が継続）。育成ライトの照射や窓際への移動を推奨します。',
+    primaryFactor: '積算受光量の不足',
+    factorDesc: '1日を通じた積算照度が好適下限値を下回り、光合成活性が著しく低下',
+    icon: SunMedium,
+    color: 'text-yellow-400',
+    badgeBg: 'bg-yellow-950/80 text-yellow-400 border-yellow-700/60',
+    border: 'border-yellow-800/40',
+  },
 };
 
 export const AiDiagnosisPanel: React.FC<AiDiagnosisPanelProps> = ({
@@ -153,12 +164,12 @@ export const AiDiagnosisPanel: React.FC<AiDiagnosisPanelProps> = ({
         <div className="flex items-center space-x-2">
           <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
           <h3 className="text-xs font-bold uppercase tracking-widest text-slate-300">
-            Solist-AI™ 臨床診断コックピット
+            植物生体 診断レポート
           </h3>
         </div>
-        <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800/50 flex items-center gap-1">
+        <span className="text-[10px] text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800/50 flex items-center gap-1">
           <ShieldCheck className="w-3 h-3" />
-          ON-DEVICE
+          AI 生体状態推論
         </span>
       </div>
 

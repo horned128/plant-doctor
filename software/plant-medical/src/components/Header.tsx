@@ -30,6 +30,7 @@ export const Header: React.FC<HeaderProps> = ({
             </span>
           </div>
           <p className="text-[11px] text-slate-400">ROHM DT-EBML63Q2557 &times; ATOMS3 Lite</p>
+          <p className="text-[11px] text-slate-400">植物生体モニタリング ＆ 診察ステーション</p>
         </div>
       </div>
 
@@ -63,6 +64,7 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="flex items-center gap-1.5 text-rose-400 font-medium">
               <span className="w-2 h-2 rounded-full bg-rose-500" />
               <span>未接続 (Demo)</span>
+              <span>未接続 (オフライン)</span>
             </span>
           )}
         </div>

@@ -17,7 +17,7 @@
 #define PLANT_DOCTOR_LCD_TIMEOUT_LOOPS     (50000UL)
 #define PLANT_DOCTOR_I2C_TIMEOUT_LOOPS     (50000UL)
 #define PLANT_DOCTOR_TIMER_START_TIMEOUT_LOOPS (480000UL)
-#define PLANT_DOCTOR_PUMP_MAX_ON_TICKS     (200U)
+#define PLANT_DOCTOR_PUMP_MAX_ON_TICKS     (1000U)   /* 1000 ticks = 10.0秒 (PP310-030 120ml/min -> 約20ml) */
 #define PLANT_DOCTOR_PUMP_COOLDOWN_TICKS   (300U)
 #define PLANT_DOCTOR_PUMP_MESSAGE_TICKS    (150U)
 #define PLANT_DOCTOR_PUMP_REQUIRE_LIQUID   (true)
@@ -37,7 +37,7 @@
 #define PLANT_DOCTOR_DIAG_DRY_THRESHOLD_PERMILLE     (300)     /* 土壌乾燥しきい値 (30.0%) */
 #define PLANT_DOCTOR_DIAG_HEAT_DELTA_CENTIC          (200)     /* 熱ストレス葉温気温差 (+2.00℃、DEMO2) */
 #define PLANT_DOCTOR_DIAG_HEAT_RATE_PER_HOUR         (50)      /* 熱ストレス葉温上昇速度 (+0.50℃/h) */
-#define PLANT_DOCTOR_DIAG_LOW_LIGHT_ACCUM            (1000L)   /* 日照不足積算照度しきい値 */
+#define PLANT_DOCTOR_DIAG_LOW_LIGHT_ACCUM            (144000L) /* 日照不足積算照度しきい値 (100 Lux x 24h) */
 #define PLANT_DOCTOR_DIAG_ROOT_UPTAKE_SOIL_PERMILLE  (400)     /* 吸水不良判定の土壌水分下限 (40.0%) */
 #define PLANT_DOCTOR_DIAG_ROOT_UPTAKE_DELTA_CENTIC   (150)     /* 吸水不良葉温気温差 (+1.50℃) */
 #define PLANT_DOCTOR_DIAG_SOIL_DRY_RATE_PER_HOUR     (-10)     /* 土壌乾燥傾向速度 (-10‰/h) */
@@ -52,7 +52,7 @@
 #define PLANT_DOCTOR_STRESS_BASELINE_SOIL_PERMILLE   (600)     /* 平常土壌水分 [‰] */
 #define PLANT_DOCTOR_STRESS_BASELINE_TEMP_DELTA      (80)      /* 平常葉温気温差 (+0.80℃、DEMO1) */
 #define PLANT_DOCTOR_STRESS_MAX_HEAT_DELTA_RANGE     (167)     /* 熱ストレスフルスケール差分 (+1.67℃) */
-#define PLANT_DOCTOR_STRESS_BASELINE_LIGHT_ACCUM     (5000L)   /* 平常積算照度 */
+#define PLANT_DOCTOR_STRESS_BASELINE_LIGHT_ACCUM     (144000L) /* 平常積算照度下限 (100 Lux x 24h) */
 #define PLANT_DOCTOR_STRESS_BASELINE_HUMIDITY        (6000U)   /* 平常湿度 (60.00%RH) */
 
 /* P5-5 自律水やり設定（P5-1/P5-2未検証のため既定無効。TODO(P2-7): 暫定値） */

@@ -51,6 +51,12 @@ const STATUS_DESCRIPTIONS: Record<string, { title: string; desc: string; color: 
     color: 'text-purple-400',
     badgeBg: 'bg-purple-950/80 text-purple-400 border-purple-800',
   },
+  LOW_LIGHT: {
+    title: '日照不足 (Low Light)',
+    desc: '1日の積算照度が不足しています（100 Lux未満が継続）。育成ライトの点灯や配置換えを検討してください。',
+    color: 'text-yellow-400',
+    badgeBg: 'bg-yellow-950/80 text-yellow-400 border-yellow-800',
+  },
 };
 
 export const StatusHero: React.FC<StatusHeroProps> = ({

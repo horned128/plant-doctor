@@ -5,6 +5,7 @@ import {
   ConnectionState,
   TimeResolution,
   PlantProfile,
+  WateringEventLog,
 } from './types';
 import { CockpitHeader, CockpitTab } from './components/CockpitHeader';
 import { DigitalPlantTwin } from './components/DigitalPlantTwin';
@@ -29,6 +30,8 @@ import {
   saveServerHistorySample,
   downloadServerParquetFile,
   downloadServerCsvFile,
+  getWateringLogs,
+  saveWateringLog,
 } from './services/historyApi';
 import { exportHistoryToParquet, exportHistoryToCsv } from './services/parquetExporter';
 import { Cpu } from 'lucide-react';
@@ -47,6 +50,12 @@ export default function App() {
   const [profiles, setProfiles] = useState<PlantProfile[]>(() => loadPlantProfiles());
   const [activeProfileId, setActiveProfileId] = useState<string>(() => loadActiveProfileId());
   const [isTrainingPersonal, setIsTrainingPersonal] = useState(false);
+
+  // 給水実績ログステート (秒数・成否・時間)
+  const [wateringLogs, setWateringLogs] = useState<WateringEventLog[]>(() => getWateringLogs());
+
+  // 初回通信確立時の自動時刻同期完了フラグ
+  const hasAutoSyncedTimeRef = useRef<boolean>(false);
 
   const activeProfile =
     profiles.find((p) => p.id === activeProfileId) || profiles[0];
@@ -119,6 +128,39 @@ export default function App() {
     return () => clearInterval(timer);
   }, [loadHistory]);
 
+  // PC時刻をAtomS3 LiteおよびRTCへ自動同期する関数
+  const syncTimeWithDevice = useCallback((silent: boolean = true) => {
+    const unix = Math.floor(Date.now() / 1000);
+    fetch(`http://${gatewayHost}/api/time`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ unix }),
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then((data) => {
+        console.log(`[TimeSync] PC時刻をAtomS3 Lite & DT-EBML RTCへ自動同期完了 (unix: ${unix})`, data);
+        if (!silent) {
+          alert('PCの現在時刻をDT-EBMLのRTCと同期しました。');
+        }
+        loadHistory();
+      })
+      .catch((e) => {
+        if (!silent) {
+          alert('時刻同期エラー: ' + e);
+        } else {
+          console.warn('[TimeSync] 初期時刻同期待機中または失敗:', e);
+        }
+      });
+  }, [gatewayHost, loadHistory]);
+
+  // gatewayHostが変更されたら自動同期フラグをリセット
+  useEffect(() => {
+    hasAutoSyncedTimeRef.current = false;
+  }, [gatewayHost]);
+
   // WebSocket connection & live streaming
   useEffect(() => {
     let ws: WebSocket;
@@ -132,6 +174,11 @@ export default function App() {
 
       ws.onopen = () => {
         setConnState('connected');
+        // 初期通信接続確立時に自動でPCの現在時刻を同期 (サイレント)
+        if (!hasAutoSyncedTimeRef.current) {
+          hasAutoSyncedTimeRef.current = true;
+          syncTimeWithDevice(true);
+        }
       };
 
       ws.onclose = () => {
@@ -148,6 +195,12 @@ export default function App() {
           const data: TelemetryData = JSON.parse(event.data);
           if (data.type === 'telemetry') {
             setTelemetry(data);
+
+            // 初回テレメトリ受信時にも未同期なら自動同期
+            if (!hasAutoSyncedTimeRef.current) {
+              hasAutoSyncedTimeRef.current = true;
+              syncTimeWithDevice(true);
+            }
 
             const now = new Date();
             const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now
@@ -230,7 +283,7 @@ export default function App() {
       if (ws) ws.close();
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
     };
-  }, [gatewayHost]);
+  }, [gatewayHost, syncTimeWithDevice]);
 
   // Handlers for Plant Profile
   const handleSelectProfile = (id: string) => {
@@ -256,7 +309,11 @@ export default function App() {
         clamp(Math.round(((telemetry.air_temp - 15) / 20) * 100), 0, 100),
         clamp(Math.round(((telemetry.leaf_air_diff - -4.0) / 6.0) * 100), 0, 100),
         clamp(Math.round(((telemetry.humidity - 20) / 80) * 100), 0, 100),
-        clamp(Math.round(45 + ((telemetry.lux - 200) / 650) * 10), 45, 55),
+        telemetry.lux < 100
+          ? clamp(Math.round((telemetry.lux / 100) * 45), 5, 45)
+          : telemetry.lux <= 5000
+          ? clamp(Math.round(45 + ((telemetry.lux - 100) / 4900) * 10), 45, 55)
+          : clamp(Math.round(55 + ((telemetry.lux - 5000) / 5000) * 45), 55, 100),
         clamp(Math.round(((telemetry.leaf_temp_rate ?? 0 - -5.0) / 10.0) * 100), 0, 100),
         clamp(Math.round(((telemetry.soil_rate ?? 0 - -200) / 400) * 100), 0, 100),
       ];
@@ -279,63 +336,63 @@ export default function App() {
     }, 800);
   };
 
-  // Handlers for Device Control
-  const handleTriggerWatering = () => {
+  // Handlers for Device Control (給水秒数選択 ＆ 成否ログ記録)
+  const handleTriggerWatering = (durationSec: number = 10) => {
+    // タンク水位安全インターロック判定
+    if (!telemetry.tank_liquid) {
+      const failedLog: WateringEventLog = {
+        id: 'water_' + Date.now(),
+        timestamp: Math.floor(Date.now() / 1000),
+        durationSec: 0,
+        success: false,
+        trigger: 'manual',
+        reason: 'タンク空（安全インターロック作動）',
+        soilBefore: telemetry.soil_raw,
+      };
+      saveWateringLog(failedLog);
+      setWateringLogs((prev) => [failedLog, ...prev]);
+      alert('給水タンクが空です。インターロックが作動し、給水は実行されませんでした。');
+      return;
+    }
+
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send('water');
     } else {
-      fetch(`http://${gatewayHost}/api/water`, { method: 'POST' }).catch((e) =>
+      fetch(`http://${gatewayHost}/api/water?duration=${durationSec}`, { method: 'POST' }).catch((e) =>
         console.error(e)
       );
     }
+
     setTelemetry((prev) => ({
       ...prev,
       pump_on: true,
       status: 'WATERING',
     }));
+
     setTimeout(() => {
+      const nowSec = Math.floor(Date.now() / 1000);
+      const successLog: WateringEventLog = {
+        id: 'water_' + Date.now(),
+        timestamp: nowSec,
+        durationSec,
+        success: true,
+        trigger: 'manual',
+        reason: '正常完了',
+        soilBefore: telemetry.soil_raw,
+        soilAfter: Math.max(1200, telemetry.soil_raw - Math.round(durationSec * 60)),
+      };
+      saveWateringLog(successLog);
+      setWateringLogs((prev) => [successLog, ...prev]);
+
       setTelemetry((prev) => ({
         ...prev,
         pump_on: false,
         status: 'HEALTHY',
+        soil_raw: Math.max(1200, prev.soil_raw - Math.round(durationSec * 60)),
         stress: Math.max(0, prev.stress - 15),
       }));
       loadHistory();
-    }, 2500);
-  };
-
-  const handleToggleDemo = (enable: boolean) => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(enable ? 'demo_on' : 'demo_off');
-    } else {
-      fetch(`http://${gatewayHost}/api/demo?enable=${enable ? 1 : 0}`, {
-        method: 'POST',
-      }).catch((e) => console.error(e));
-    }
-    setTelemetry((prev) => ({
-      ...prev,
-      demo_mode: enable,
-      status: enable ? 'DRY_STRESS' : 'HEALTHY',
-      stress: enable ? 65 : 2,
-    }));
-  };
-
-  const handleSyncTime = () => {
-    const unix = Math.floor(Date.now() / 1000);
-    fetch(`http://${gatewayHost}/api/time`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ unix }),
-    })
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then(() => {
-        alert('PCの現在時刻をDT-EBMLのRTCと同期しました。');
-        loadHistory();
-      })
-      .catch((e) => alert('時刻同期エラー: ' + e));
+    }, durationSec * 1000);
   };
 
   const handleClearHistory = async () => {
@@ -386,7 +443,7 @@ export default function App() {
           <div className="w-full flex flex-col gap-4 flex-1 justify-between">
             {/* Upper Cockpit: 3-Column Biological Stage */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 flex-1 items-stretch">
-              {/* Left Wing (3.5 Cols): 生体 & 環境テレメトリ (葉温, ΔT, 気温, 湿度, 照度) */}
+              {/* Left Wing (3 Cols): 生体 & 環境テレメトリ (葉温, ΔT, 気温, 湿度, 照度) */}
               <div className="lg:col-span-3 xl:col-span-3 flex flex-col">
                 <BioTelemetryPanel
                   airTemp={telemetry.air_temp}
@@ -399,7 +456,7 @@ export default function App() {
                 />
               </div>
 
-              {/* Center Stage (5.5 Cols): 植物生体デジタルツイン (生命の呼吸 & 状態可視化) */}
+              {/* Center Stage (5 Cols): 植物生体デジタルツイン (生命の呼吸 & 状態可視化) */}
               <div className="lg:col-span-5 xl:col-span-5 flex flex-col">
                 <DigitalPlantTwin
                   status={telemetry.status}
@@ -413,7 +470,7 @@ export default function App() {
                 />
               </div>
 
-              {/* Right Wing (3 Cols): Solist-AI™ 臨床診断 & Why? 主要因分析 */}
+              {/* Right Wing (4 Cols): 植物生体 診断レポート & AI推論 */}
               <div className="lg:col-span-4 xl:col-span-4 flex flex-col">
                 <AiDiagnosisPanel
                   status={telemetry.status}
@@ -438,9 +495,9 @@ export default function App() {
                 soilTrend={telemetry.soil_trend}
                 tankLiquid={telemetry.tank_liquid}
                 pumpOn={telemetry.pump_on}
-                demoMode={telemetry.demo_mode}
+                lastWateringLog={wateringLogs[0]}
+                wateringLogs={wateringLogs}
                 onTriggerWatering={handleTriggerWatering}
-                onToggleDemo={handleToggleDemo}
               />
             </div>
           </div>
@@ -460,6 +517,7 @@ export default function App() {
               onExportCsv={handleExportCsv}
               onExportParquet={handleExportParquet}
               isLoading={isLoadingHistory}
+              wateringLogs={wateringLogs}
             />
           </div>
         )}
@@ -525,7 +583,7 @@ export default function App() {
               gatewayHost={gatewayHost}
               setGatewayHost={setGatewayHost}
               connState={connState}
-              onSyncTime={handleSyncTime}
+              onSyncTime={() => syncTimeWithDevice(false)}
               tankLiquid={telemetry.tank_liquid}
               pumpOn={telemetry.pump_on}
               seq={telemetry.seq}

@@ -19,13 +19,19 @@ if (!fs.existsSync(dataDir)) {
 function loadRecords() {
   try {
     if (fs.existsSync(jsonPath)) {
-      return JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
+      const records = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
+      if (Array.isArray(records)) {
+        return records
+          .filter((r) => typeof r.timestamp === 'number' && r.timestamp > 1000000000)
+          .sort((a, b) => a.timestamp - b.timestamp);
+      }
     }
   } catch (e) {
     console.error('Error loading records:', e);
   }
   return [];
 }
+
 
 function saveRecordsToFiles(records) {
   try {
@@ -98,13 +104,20 @@ const server = http.createServer((req, res) => {
     req.on('end', () => {
       try {
         const record = JSON.parse(body);
+        if (typeof record.timestamp !== 'number' || record.timestamp <= 1000000000) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Invalid or missing unix timestamp (> 1000000000)' }));
+          return;
+        }
         const records = loadRecords();
         if (!records.some((r) => r.timestamp === record.timestamp)) {
           records.push(record);
+          records.sort((a, b) => a.timestamp - b.timestamp);
           saveRecordsToFiles(records);
         }
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ status: 'ok', count: records.length, saved_to: dataDir }));
+
       } catch (e) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Invalid JSON' }));

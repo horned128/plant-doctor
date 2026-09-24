@@ -25,10 +25,10 @@ export const BioTelemetryPanel: React.FC<BioTelemetryPanelProps> = ({
 
   // Lux Zone assessment
   let luxZoneLabel = '好適光合成域';
-  let luxBarPercent = Math.min(100, Math.max(0, (lux / 1200) * 100));
+  let luxBarPercent = Math.min(100, Math.max(0, (lux / 6000) * 100));
   if (lux < 100) {
-    luxZoneLabel = '夜間・弱光域';
-  } else if (lux > 1500) {
+    luxZoneLabel = '暗期・弱光域';
+  } else if (lux > 5000) {
     luxZoneLabel = '強光・直射注意';
   }
 
@@ -48,8 +48,8 @@ export const BioTelemetryPanel: React.FC<BioTelemetryPanelProps> = ({
             生体 ＆ 環境テレメトリ
           </h3>
         </div>
-        <span className="text-[10px] font-mono text-slate-500 bg-slate-900/80 px-2 py-0.5 rounded border border-slate-800">
-          CH 1-6 ACTIVE
+        <span className="text-[10px] text-teal-400/80 bg-teal-950/60 px-2 py-0.5 rounded border border-teal-800/50">
+          リアルタイム生体値
         </span>
       </div>
 
@@ -60,7 +60,7 @@ export const BioTelemetryPanel: React.FC<BioTelemetryPanelProps> = ({
             <Activity className="w-4 h-4 text-teal-400" />
             <span>蒸散冷却指標 (&Delta;T)</span>
           </div>
-          <span className="text-[10px] font-mono text-slate-500">SEN0206 &times; BME280</span>
+          <span className="text-[10px] text-slate-400">蒸散活動</span>
         </div>
 
         <div className="flex items-baseline justify-between">
@@ -116,6 +116,7 @@ export const BioTelemetryPanel: React.FC<BioTelemetryPanelProps> = ({
             <span className="flex items-center gap-1">
               <Leaf className="w-3.5 h-3.5 text-emerald-400" />
               葉温 (IR)
+              葉温
             </span>
             {leafTempRate !== 0 && (
               <span className="text-[9px] font-mono flex items-center text-slate-400">
@@ -135,6 +136,7 @@ export const BioTelemetryPanel: React.FC<BioTelemetryPanelProps> = ({
             <span className="text-xs text-slate-400 font-semibold">&deg;C</span>
           </div>
           <div className="text-[9px] text-slate-500 mt-1">赤外線非接触</div>
+          <div className="text-[9px] text-slate-500 mt-1">植物生体表面</div>
         </div>
 
         {/* Air Temp */}
@@ -143,6 +145,7 @@ export const BioTelemetryPanel: React.FC<BioTelemetryPanelProps> = ({
             <span className="flex items-center gap-1">
               <Thermometer className="w-3.5 h-3.5 text-sky-400" />
               気温 (Air)
+              気温 (環境)
             </span>
             <span className="text-[9px] font-mono text-slate-500">BME280</span>
           </div>
@@ -200,7 +203,7 @@ export const BioTelemetryPanel: React.FC<BioTelemetryPanelProps> = ({
       <div className="mt-2 pt-2.5 border-t border-slate-800/80 space-y-1.5">
         <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono">
           <span>光合成光量スペクトル</span>
-          <span className="text-amber-400">{lux} / 1200 lx</span>
+          <span className="text-amber-400">{lux} / 6000 lx</span>
         </div>
         <div className="w-full bg-slate-900 h-1 rounded-full overflow-hidden">
           <div

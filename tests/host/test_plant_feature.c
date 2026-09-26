@@ -219,7 +219,7 @@ static void Test_IlluminanceAccumulation(void) {
     input.illuminanceValid = true;
     input.wateringOccurred = false;
 
-    /* 60分経過（1時間） */
+    /* 60分経過（1時間）: 起動直後は24時間蓄積完了までマスクされていることを検証 */
     for (min = 0; min < 60; ++min) {
         int sec;
         for (sec = 0; sec < 60; ++sec) {
@@ -228,9 +228,21 @@ static void Test_IlluminanceAccumulation(void) {
     }
 
     PlantFeature_GetVector(&state, &vector);
-    TEST_ASSERT_TRUE((vector.validMask & PLANT_FEATURE_VALID_ILLUMINANCE_ACCUM) != 0U);
-    /* 60分 * 100 = 6000 */
+    TEST_ASSERT_EQUAL_INT(0U, (vector.validMask & PLANT_FEATURE_VALID_ILLUMINANCE_ACCUM));
     TEST_ASSERT_EQUAL_INT(6000, vector.illuminanceAccumulated);
+
+    /* 24時間蓄積完了（残り23時間分） */
+    for (min = 60; min < (24 * 60); ++min) {
+        int sec;
+        for (sec = 0; sec < 60; ++sec) {
+            PlantFeature_Update(&state, &input);
+        }
+    }
+
+    PlantFeature_GetVector(&state, &vector);
+    TEST_ASSERT_TRUE((vector.validMask & PLANT_FEATURE_VALID_ILLUMINANCE_ACCUM) != 0U);
+    /* 24時間 * 60分 * 100 = 144000 */
+    TEST_ASSERT_EQUAL_INT(144000, vector.illuminanceAccumulated);
 }
 
 /** =================================================================*

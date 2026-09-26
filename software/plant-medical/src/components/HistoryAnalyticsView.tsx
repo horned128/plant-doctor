@@ -53,7 +53,11 @@ export const HistoryAnalyticsView: React.FC<HistoryAnalyticsViewProps> = ({
 
   // Custom date picker state
   const [showDateModal, setShowDateModal] = useState<boolean>(false);
-  const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const todayStr = useMemo(() => {
+    const d = new Date();
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }, []);
   const [customRange, setCustomRange] = useState<CustomDateRange>({
     startDate: todayStr,
     startHour: 0,
@@ -126,15 +130,17 @@ export const HistoryAnalyticsView: React.FC<HistoryAnalyticsViewProps> = ({
         minSoil: 0,
         maxSoil: 0,
         curSoil: 0,
-        avgLoss: 0,
+        curStress: 0,
+        avgStress: 0,
         stressCount: 0,
       };
     }
     const sumAir = filteredRecords.reduce((acc, r) => acc + (r.air_temp || 0), 0);
     const sumLeaf = filteredRecords.reduce((acc, r) => acc + (r.leaf_temp || 0), 0);
     const sumDiff = filteredRecords.reduce((acc, r) => acc + (r.leaf_air_diff || 0), 0);
-    const sumLoss = filteredRecords.reduce((acc, r) => acc + (r.ai_loss || 0), 0);
+    const sumStress = filteredRecords.reduce((acc, r) => acc + (r.stress || 0), 0);
     const soils = filteredRecords.map((r) => r.soil_raw || 0);
+    const stresses = filteredRecords.map((r) => r.stress || 0);
     const stressItems = filteredRecords.filter(
       (r) => r.status === 'HEAT_STRESS' || r.status === 'DRY_STRESS' || (r.stress || 0) >= 50
     );
@@ -146,10 +152,18 @@ export const HistoryAnalyticsView: React.FC<HistoryAnalyticsViewProps> = ({
       minSoil: Math.min(...soils),
       maxSoil: Math.max(...soils),
       curSoil: soils[soils.length - 1] || 0,
-      avgLoss: Number((sumLoss / filteredRecords.length).toFixed(4)),
+      curStress: stresses[stresses.length - 1] || 0,
+      avgStress: Number((sumStress / filteredRecords.length).toFixed(1)),
       stressCount: stressItems.length,
     };
   }, [filteredRecords]);
+
+  // Unix秒をローカル時間（JST）の "YYYY-MM-DD HH:mm:ss" に変換（Plotlyの日時軸・ホバーがUTCにならずローカル時刻で正しく描画されるよう整形）
+  const toLocalPlotlyString = (ts: number): string => {
+    const d = new Date(ts * 1000);
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  };
 
   // 横軸目盛りのスマート生成（時間・日・週・月）
   const generateSmartTicks = (timestamps: number[], res: TimeResolution) => {
@@ -164,7 +178,7 @@ export const HistoryAnalyticsView: React.FC<HistoryAnalyticsViewProps> = ({
       for (const t of timestamps) {
         const d = new Date(t * 1000);
         if (d.getMinutes() % 10 === 0) {
-          tickvals.push(d.toISOString());
+          tickvals.push(toLocalPlotlyString(t));
           ticktext.push(`${d.getHours()}時${d.getMinutes() > 0 ? d.getMinutes() + '分' : ''}`);
         }
       }
@@ -175,7 +189,7 @@ export const HistoryAnalyticsView: React.FC<HistoryAnalyticsViewProps> = ({
         const h = d.getHours();
         if (h % 3 === 0 && !seenHours.has(h)) {
           seenHours.add(h);
-          tickvals.push(d.toISOString());
+          tickvals.push(toLocalPlotlyString(t));
           ticktext.push(`${h}時`);
         }
       }
@@ -186,7 +200,7 @@ export const HistoryAnalyticsView: React.FC<HistoryAnalyticsViewProps> = ({
         const dayKey = `${d.getMonth() + 1}-${d.getDate()}`;
         if (!seenDays.has(dayKey)) {
           seenDays.add(dayKey);
-          tickvals.push(d.toISOString());
+          tickvals.push(toLocalPlotlyString(t));
           ticktext.push(`${d.getDate()}日`);
         }
       }
@@ -197,7 +211,7 @@ export const HistoryAnalyticsView: React.FC<HistoryAnalyticsViewProps> = ({
         const day = d.getDate();
         if ((day === 1 || day % 5 === 0) && !seenDays.has(day)) {
           seenDays.add(day);
-          tickvals.push(d.toISOString());
+          tickvals.push(toLocalPlotlyString(t));
           ticktext.push(`${day}日`);
         }
       }
@@ -210,7 +224,7 @@ export const HistoryAnalyticsView: React.FC<HistoryAnalyticsViewProps> = ({
           const h = d.getHours();
           if (h % 2 === 0 && !seenHours.has(h)) {
             seenHours.add(h);
-            tickvals.push(d.toISOString());
+            tickvals.push(toLocalPlotlyString(t));
             ticktext.push(`${h}時`);
           }
         }
@@ -221,7 +235,7 @@ export const HistoryAnalyticsView: React.FC<HistoryAnalyticsViewProps> = ({
           const dayKey = `${d.getMonth() + 1}-${d.getDate()}`;
           if (!seenDays.has(dayKey)) {
             seenDays.add(dayKey);
-            tickvals.push(d.toISOString());
+            tickvals.push(toLocalPlotlyString(t));
             ticktext.push(`${d.getDate()}日`);
           }
         }
@@ -241,14 +255,24 @@ export const HistoryAnalyticsView: React.FC<HistoryAnalyticsViewProps> = ({
     }
 
     const timestamps = filteredRecords.map((r) => r.timestamp);
-    const xValues = timestamps.map((ts) => new Date(ts * 1000).toISOString());
+    const xValues = timestamps.map((ts) => toLocalPlotlyString(ts));
 
     const leafTemps = filteredRecords.map((r) => r.leaf_temp);
     const airTemps = filteredRecords.map((r) => r.air_temp);
     const deltaTs = filteredRecords.map((r) => r.leaf_air_diff);
     const soils = filteredRecords.map((r) => r.soil_raw);
-    const losses = filteredRecords.map((r) => r.ai_loss ?? 0.02);
     const stresses = filteredRecords.map((r) => r.stress);
+
+    // 土壌水分のダイナミックスケール計算（0固定を排除し、変化を縦幅いっぱいに拡大表示）
+    const minSoil = soils.length > 0 ? Math.min(...soils) : 1500;
+    const maxSoil = soils.length > 0 ? Math.max(...soils) : 2000;
+    const soilMargin = Math.max(25, Math.round((maxSoil - minSoil) * 0.15));
+
+    // 静電容量Raw値から直感的な推定水分充足率(%)へのリアルタイム換算
+    const soilPercentages = soils.map((raw) => {
+      const p = Math.round(100 - ((raw - 1500) / (2050 - 1500)) * 85);
+      return Math.max(5, Math.min(95, p));
+    });
 
     const { tickvals, ticktext } = generateSmartTicks(timestamps, resolution);
 
@@ -288,45 +312,34 @@ export const HistoryAnalyticsView: React.FC<HistoryAnalyticsViewProps> = ({
       hovertemplate: '%{x|%m/%d %H:%M}<br>ΔT: %{y:+.2f} ℃<extra></extra>',
     };
 
-    // Trace 4: 根圏土壌水分 (Soil Raw)
+    // Trace 4: 根圏土壌水分 (Soil Raw) - 0固定のtozeroyを廃止し、水分%をツールチップ表示
     const traceSoil: any = {
       x: xValues,
       y: soils,
+      customdata: soilPercentages,
       name: '土壌水分 Raw',
       type: 'scatter',
       mode: 'lines',
-      line: { color: '#a855f7', width: 2 },
-      fill: 'tozeroy',
-      fillcolor: 'rgba(168, 85, 247, 0.08)',
+      line: { color: '#c084fc', width: 2.5 },
       yaxis: 'y3',
-      hovertemplate: '%{x|%m/%d %H:%M}<br>土壌Raw: %{y}<extra></extra>',
+      hovertemplate: '%{x|%m/%d %H:%M}<br>土壌Raw: %{y}<br>推定水分充足率: %{customdata}%<extra></extra>',
     };
 
-    // Trace 5: 生体再構成損失 (AI Loss)
-    const traceLoss: any = {
-      x: xValues,
-      y: losses,
-      name: 'AI 再構成損失 (Loss)',
-      type: 'scatter',
-      mode: 'lines',
-      line: { color: '#06b6d4', width: 1.5 },
-      yaxis: 'y4',
-      hovertemplate: '%{x|%m/%d %H:%M}<br>Loss: %{y:.4f}<extra></extra>',
-    };
-
-    // Trace 6: ストレススコア (Stress Score)
+    // Trace 5: 総合ストレススコア (Stress Score: 0-100) - AI Lossを排除しストレス単独でクリア表示
     const traceStress: any = {
       x: xValues,
       y: stresses,
       name: '総合ストレス (0-100)',
       type: 'scatter',
       mode: 'lines',
-      line: { color: '#ef4444', width: 1.5 },
+      line: { color: '#f43f5e', width: 2 },
+      fill: 'tozeroy',
+      fillcolor: 'rgba(244, 63, 94, 0.10)',
       yaxis: 'y4',
-      hovertemplate: '%{x|%m/%d %H:%M}<br>ストレス: %{y}<extra></extra>',
+      hovertemplate: '%{x|%m/%d %H:%M}<br>ストレス: %{y} / 100<extra></extra>',
     };
 
-    const data = [traceLeaf, traceAir, traceDeltaT, traceSoil, traceLoss, traceStress];
+    const data = [traceLeaf, traceAir, traceDeltaT, traceSoil, traceStress];
 
     const layout: any = {
       paper_bgcolor: 'transparent',
@@ -385,17 +398,18 @@ export const HistoryAnalyticsView: React.FC<HistoryAnalyticsViewProps> = ({
         showgrid: false,
       },
       yaxis3: {
-        title: { text: '土壌 Raw', font: { size: 10, color: '#a855f7' } },
-        tickfont: { color: '#a855f7', size: 9 },
+        title: { text: '土壌 Raw (乾燥 ← → 湿潤)', font: { size: 10, color: '#c084fc' } },
+        tickfont: { color: '#c084fc', size: 9 },
         gridcolor: 'rgba(51, 65, 85, 0.4)',
         domain: [0.38, 0.64],
-        autorange: 'reversed',
+        range: [maxSoil + soilMargin, minSoil - soilMargin],
       },
       yaxis4: {
-        title: { text: 'AI Loss / 総合ストレス', font: { size: 10, color: '#06b6d4' } },
-        tickfont: { color: '#06b6d4', size: 9 },
+        title: { text: '総合ストレス (0-100)', font: { size: 10, color: '#f43f5e' } },
+        tickfont: { color: '#f43f5e', size: 9 },
         gridcolor: 'rgba(51, 65, 85, 0.4)',
         domain: [0.0, 0.28],
+        range: [0, Math.max(40, Math.max(...stresses, 0) + 10)],
       },
     };
 
@@ -621,14 +635,19 @@ export const HistoryAnalyticsView: React.FC<HistoryAnalyticsViewProps> = ({
           </div>
         </div>
 
-        {/* Metric 4: AI Loss */}
+        {/* Metric 4: Stress Score */}
         <div className="p-3.5 rounded-3xl bg-slate-950/40 border border-slate-800/60 backdrop-blur-md flex items-center space-x-3">
-          <div className="p-2 rounded-2xl bg-teal-500/10 text-teal-400">
+          <div className="p-2 rounded-2xl bg-rose-500/10 text-rose-400">
             <Activity className="w-4 h-4" />
           </div>
           <div>
-            <div className="text-[10px] text-slate-400 font-semibold">平均再構成損失</div>
-            <div className="text-base font-black text-teal-400 font-mono">{stats.avgLoss}</div>
+            <div className="text-[10px] text-slate-400 font-semibold">最新 / 平均ストレス</div>
+            <div className="text-base font-black text-rose-400 font-mono">
+              {stats.curStress}
+              <span className="text-xs text-slate-400 font-normal ml-1">
+                / {stats.avgStress}
+              </span>
+            </div>
           </div>
         </div>
 

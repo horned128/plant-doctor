@@ -204,17 +204,41 @@ void LcdUi_FormatStatus(PLANT_STATUS status, DIAGNOSIS_FAILED_SENSOR failedSenso
 }
 
 /** =================================================================*
+ * @brief  ストレススコアに応じた顔文字（5文字）を取得
+ * ================================================================= */
+static const char *LcdUi_GetStressEmoticon(uint8_t stressScore) {
+    if (stressScore == PLANT_STRESS_UNKNOWN) {
+        return "(?_?)";
+    }
+    if (stressScore <= 25U) {
+        return "(^_^)";
+    }
+    if (stressScore <= 50U) {
+        return "(-_-)";
+    }
+    if (stressScore <= 75U) {
+        return "(>_<)";
+    }
+    return "(X_X)";
+}
+
+/** =================================================================*
  * @brief  ストレススコア行を整形（16文字以内）
  * ================================================================= */
 void LcdUi_FormatStressLine(uint8_t stressScore, bool isDemoMode, char *line, uint8_t lineSize) {
+    const char *emo;
+
     if ((line == NULL) || (lineSize == 0U)) {
         return;
     }
+
+    emo = LcdUi_GetStressEmoticon(stressScore);
+
     if (stressScore == PLANT_STRESS_UNKNOWN) {
         if (isDemoMode) {
-            (void)snprintf(line, (size_t)lineSize, "STRESS: --/100 *");
+            (void)snprintf(line, (size_t)lineSize, "STRESS:-- %s*", emo);
         } else {
-            (void)snprintf(line, (size_t)lineSize, "STRESS:  --/100");
+            (void)snprintf(line, (size_t)lineSize, "STRESS: -- %s", emo);
         }
     } else {
         unsigned int val = (unsigned int)stressScore;
@@ -223,15 +247,15 @@ void LcdUi_FormatStressLine(uint8_t stressScore, bool isDemoMode, char *line, ui
         }
         if (isDemoMode) {
             if (val >= 100U) {
-                (void)snprintf(line, (size_t)lineSize, "STRESS: 100/100*");
+                (void)snprintf(line, (size_t)lineSize, "STRESS:100%s*", emo);
             } else {
-                (void)snprintf(line, (size_t)lineSize, "STRESS: %2u/100 *", val);
+                (void)snprintf(line, (size_t)lineSize, "STRESS:%2u %s*", val, emo);
             }
         } else {
             if (val >= 100U) {
-                (void)snprintf(line, (size_t)lineSize, "STRESS: 100/100");
+                (void)snprintf(line, (size_t)lineSize, "STRESS:100 %s", emo);
             } else {
-                (void)snprintf(line, (size_t)lineSize, "STRESS:  %2u/100", val);
+                (void)snprintf(line, (size_t)lineSize, "STRESS: %2u %s", val, emo);
             }
         }
     }
@@ -308,7 +332,7 @@ void LcdUi_FormatPage(const LCD_DIAGNOSIS_VIEW_DATA *diagData,
                 LcdUi_FormatStressLine(diagData->stressScore, diagData->isDemoMode, line1, lineSize);
                 LcdUi_FormatStatus(diagData->status, diagData->failedSensor, line2, lineSize);
             } else {
-                (void)snprintf(line1, (size_t)lineSize, "STRESS:  --/100");
+                LcdUi_FormatStressLine(PLANT_STRESS_UNKNOWN, false, line1, lineSize);
                 (void)snprintf(line2, (size_t)lineSize, "HEALTHY");
             }
             break;

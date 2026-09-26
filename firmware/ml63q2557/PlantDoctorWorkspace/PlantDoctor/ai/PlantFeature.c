@@ -141,7 +141,9 @@ void PlantFeature_Update(PLANT_FEATURE_STATE *state, const PLANT_FEATURE_INPUT *
             }
             state->currentHourIlluminanceSum = 0;
             state->minuteInHour = 0U;
-            state->hasAccumulatedIlluminance = true;
+            if (state->hourHistoryCount >= PLANT_FEATURE_ACCUM_HOURS) {
+                state->hasAccumulatedIlluminance = true;
+            }
         }
     }
 
@@ -187,7 +189,7 @@ void PlantFeature_Update(PLANT_FEATURE_STATE *state, const PLANT_FEATURE_INPUT *
     }
     accumSum += state->currentHourIlluminanceSum;
     state->vector.illuminanceAccumulated = accumSum;
-    if (state->hasAccumulatedIlluminance || (state->minuteInHour > 0U)) {
+    if (state->hasAccumulatedIlluminance) {
         state->vector.validMask |= PLANT_FEATURE_VALID_ILLUMINANCE_ACCUM;
     }
 }

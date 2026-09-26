@@ -81,30 +81,66 @@ static void Test_AllSoilTrendStringsLength(void) {
 static void Test_StressLineFormatting(void) {
     char line[32];
 
-    /* 通常時 */
+    /* 通常時: 0..25 (^_^), 26..50 (-_-), 51..75 (>_<), 76..100 (X_X), UNKNOWN (?_?) */
+    LcdUi_FormatStressLine(0U, false, line, sizeof(line));
+    TEST_ASSERT_EQUAL_STRING("STRESS:  0 (^_^)", line);
+    TEST_ASSERT_TRUE(strlen(line) <= 16U);
+
     LcdUi_FormatStressLine(18U, false, line, sizeof(line));
-    TEST_ASSERT_EQUAL_STRING("STRESS:  18/100", line);
+    TEST_ASSERT_EQUAL_STRING("STRESS: 18 (^_^)", line);
+    TEST_ASSERT_TRUE(strlen(line) <= 16U);
+
+    LcdUi_FormatStressLine(25U, false, line, sizeof(line));
+    TEST_ASSERT_EQUAL_STRING("STRESS: 25 (^_^)", line);
+    TEST_ASSERT_TRUE(strlen(line) <= 16U);
+
+    LcdUi_FormatStressLine(26U, false, line, sizeof(line));
+    TEST_ASSERT_EQUAL_STRING("STRESS: 26 (-_-)", line);
+    TEST_ASSERT_TRUE(strlen(line) <= 16U);
+
+    LcdUi_FormatStressLine(50U, false, line, sizeof(line));
+    TEST_ASSERT_EQUAL_STRING("STRESS: 50 (-_-)", line);
+    TEST_ASSERT_TRUE(strlen(line) <= 16U);
+
+    LcdUi_FormatStressLine(51U, false, line, sizeof(line));
+    TEST_ASSERT_EQUAL_STRING("STRESS: 51 (>_<)", line);
     TEST_ASSERT_TRUE(strlen(line) <= 16U);
 
     LcdUi_FormatStressLine(72U, false, line, sizeof(line));
-    TEST_ASSERT_EQUAL_STRING("STRESS:  72/100", line);
+    TEST_ASSERT_EQUAL_STRING("STRESS: 72 (>_<)", line);
+    TEST_ASSERT_TRUE(strlen(line) <= 16U);
+
+    LcdUi_FormatStressLine(75U, false, line, sizeof(line));
+    TEST_ASSERT_EQUAL_STRING("STRESS: 75 (>_<)", line);
+    TEST_ASSERT_TRUE(strlen(line) <= 16U);
+
+    LcdUi_FormatStressLine(76U, false, line, sizeof(line));
+    TEST_ASSERT_EQUAL_STRING("STRESS: 76 (X_X)", line);
     TEST_ASSERT_TRUE(strlen(line) <= 16U);
 
     LcdUi_FormatStressLine(100U, false, line, sizeof(line));
-    TEST_ASSERT_EQUAL_STRING("STRESS: 100/100", line);
+    TEST_ASSERT_EQUAL_STRING("STRESS:100 (X_X)", line);
     TEST_ASSERT_TRUE(strlen(line) <= 16U);
 
     LcdUi_FormatStressLine(PLANT_STRESS_UNKNOWN, false, line, sizeof(line));
-    TEST_ASSERT_EQUAL_STRING("STRESS:  --/100", line);
+    TEST_ASSERT_EQUAL_STRING("STRESS: -- (?_?)", line);
     TEST_ASSERT_TRUE(strlen(line) <= 16U);
 
     /* デモモード時 (*) */
+    LcdUi_FormatStressLine(18U, true, line, sizeof(line));
+    TEST_ASSERT_EQUAL_STRING("STRESS:18 (^_^)*", line);
+    TEST_ASSERT_TRUE(strlen(line) <= 16U);
+
     LcdUi_FormatStressLine(72U, true, line, sizeof(line));
-    TEST_ASSERT_EQUAL_STRING("STRESS: 72/100 *", line);
+    TEST_ASSERT_EQUAL_STRING("STRESS:72 (>_<)*", line);
+    TEST_ASSERT_TRUE(strlen(line) <= 16U);
+
+    LcdUi_FormatStressLine(100U, true, line, sizeof(line));
+    TEST_ASSERT_EQUAL_STRING("STRESS:100(X_X)*", line);
     TEST_ASSERT_TRUE(strlen(line) <= 16U);
 
     LcdUi_FormatStressLine(PLANT_STRESS_UNKNOWN, true, line, sizeof(line));
-    TEST_ASSERT_EQUAL_STRING("STRESS: --/100 *", line);
+    TEST_ASSERT_EQUAL_STRING("STRESS:-- (?_?)*", line);
     TEST_ASSERT_TRUE(strlen(line) <= 16U);
 }
 
@@ -161,7 +197,7 @@ static void Test_ProjectDemosDisplay(void) {
     diag.isDemoMode = false;
 
     LcdUi_FormatPage(&diag, &snap, 0U, line1, line2, sizeof(line1));
-    TEST_ASSERT_EQUAL_STRING("STRESS:  18/100", line1);
+    TEST_ASSERT_EQUAL_STRING("STRESS: 18 (^_^)", line1);
     TEST_ASSERT_EQUAL_STRING("HEALTHY", line2);
 
     LcdUi_FormatPage(&diag, &snap, 1U, line1, line2, sizeof(line1));
@@ -175,7 +211,7 @@ static void Test_ProjectDemosDisplay(void) {
     diag.soilTrend = SOIL_TREND_STABLE;
 
     LcdUi_FormatPage(&diag, &snap, 0U, line1, line2, sizeof(line1));
-    TEST_ASSERT_EQUAL_STRING("STRESS:  72/100", line1);
+    TEST_ASSERT_EQUAL_STRING("STRESS: 72 (>_<)", line1);
     TEST_ASSERT_EQUAL_STRING("HEAT STRESS", line2);
 
     LcdUi_FormatPage(&diag, &snap, 1U, line1, line2, sizeof(line1));
@@ -189,7 +225,7 @@ static void Test_ProjectDemosDisplay(void) {
     diag.soilTrend = SOIL_TREND_DRY;
 
     LcdUi_FormatPage(&diag, &snap, 0U, line1, line2, sizeof(line1));
-    TEST_ASSERT_EQUAL_STRING("STRESS:  80/100", line1);
+    TEST_ASSERT_EQUAL_STRING("STRESS: 80 (X_X)", line1);
     TEST_ASSERT_EQUAL_STRING("WATERING", line2);
 
     LcdUi_FormatPage(&diag, &snap, 1U, line1, line2, sizeof(line1));
@@ -199,14 +235,14 @@ static void Test_ProjectDemosDisplay(void) {
     /* DEMO4: 水やり失敗 -> Stress: 80/100 / Watering Failed / +0.5C / Dry */
     diag.status = PLANT_STATUS_WATERING_FAILED;
     LcdUi_FormatPage(&diag, &snap, 0U, line1, line2, sizeof(line1));
-    TEST_ASSERT_EQUAL_STRING("STRESS:  80/100", line1);
+    TEST_ASSERT_EQUAL_STRING("STRESS: 80 (X_X)", line1);
     TEST_ASSERT_EQUAL_STRING("WATER FAILED", line2);
 
     /* DEMO5: センサー異常 -> Stress: 80/100 / Soil Sensor Error / +0.5C / Dry */
     diag.status = PLANT_STATUS_SENSOR_ERROR;
     diag.failedSensor = DIAGNOSIS_FAILED_SENSOR_SOIL;
     LcdUi_FormatPage(&diag, &snap, 0U, line1, line2, sizeof(line1));
-    TEST_ASSERT_EQUAL_STRING("STRESS:  80/100", line1);
+    TEST_ASSERT_EQUAL_STRING("STRESS: 80 (X_X)", line1);
     TEST_ASSERT_EQUAL_STRING("SOIL SENS ERR", line2);
 
     LcdUi_FormatPage(&diag, &snap, 1U, line1, line2, sizeof(line1));
@@ -258,7 +294,7 @@ static void Test_LcdUiShowDiagnosisPage(void) {
 
     /* ページ0描画 */
     TEST_ASSERT_TRUE(LcdUi_ShowDiagnosisPage(&diag, &snap, 0U));
-    TEST_ASSERT_EQUAL_STRING("STRESS:  72/100 ", s_lcdMockLine1); /* 16文字パディング */
+    TEST_ASSERT_EQUAL_STRING("STRESS: 72 (>_<)", s_lcdMockLine1); /* 16文字パディング */
     TEST_ASSERT_EQUAL_STRING("HEAT STRESS     ", s_lcdMockLine2);
 }
 

@@ -1,0 +1,40 @@
+<mxfile host="65bd71144e">
+    <diagram name="Simple Anomaly Detection" id="plant-doctor-simple-anomaly">
+        <mxGraphModel dx="1039" dy="620" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="840" pageHeight="420" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="title" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D32;strokeWidth=2;align=center;verticalAlign=middle;fontSize=18;fontStyle=1;fontColor=#1B5E20;" value="Plant Doctor が検知する 7つの異常" vertex="1">
+                    <mxGeometry height="42" width="800" x="20" y="15" as="geometry"/>
+                </mxCell>
+                <mxCell id="grp_bio" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F8E9;strokeColor=#558B2F;strokeWidth=2;align=left;verticalAlign=top;spacingLeft=15;spacingTop=8;fontSize=15;fontStyle=1;fontColor=#2E7D32;" value="🌱 植物の生体ストレス（葉温・土壌・光から判定）" vertex="1">
+                    <mxGeometry height="150" width="800" x="20" y="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="c1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#FF7043;strokeWidth=2;align=center;verticalAlign=middle;fontSize=15;fontColor=#BF360C;" value="&lt;font&gt;&lt;b style=&quot;&quot;&gt;🌵 水切れ&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;color: rgb(84, 110, 122);&quot;&gt;土の乾燥を検知し自律給水&lt;/span&gt;&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="90" width="185" x="35" y="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="c2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#EF5350;strokeWidth=2;align=center;verticalAlign=middle;fontSize=15;fontColor=#C62828;" value="&lt;font&gt;&lt;b style=&quot;&quot;&gt;🔥 熱中症&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;color: rgb(84, 110, 122);&quot;&gt;気孔が閉じ葉温が急上昇&lt;/span&gt;&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="90" width="185" x="235" y="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="c3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#AB47BC;strokeWidth=2;align=center;verticalAlign=middle;fontSize=15;fontColor=#6A1B9A;" value="&lt;font&gt;&lt;b style=&quot;&quot;&gt;🥀 根腐れ&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;color: rgb(84, 110, 122);&quot;&gt;土は湿るが水が吸えない&lt;/span&gt;&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="90" width="185" x="435" y="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="c4" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#FBC02D;strokeWidth=2;align=center;verticalAlign=middle;fontSize=15;fontColor=#F57F17;" value="&lt;font&gt;&lt;b style=&quot;&quot;&gt;🌑 日照不足&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;color: rgb(84, 110, 122);&quot;&gt;1日の光量が足りない&lt;/span&gt;&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="90" width="170" x="635" y="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="grp_sys" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0F7FA;strokeColor=#00838F;strokeWidth=2;align=left;verticalAlign=top;spacingLeft=15;spacingTop=8;fontSize=15;fontStyle=1;fontColor=#006064;" value="⚙️ 水やり結果の自己診断 ＆ 機器監視" vertex="1">
+                    <mxGeometry height="150" width="800" x="20" y="235" as="geometry"/>
+                </mxCell>
+                <mxCell id="c5" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#EC407A;strokeWidth=2;align=center;verticalAlign=middle;fontSize=15;fontColor=#C2185B;" value="&lt;font&gt;&lt;b style=&quot;&quot;&gt;🚫 水やり失敗&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;color: rgb(84, 110, 122);&quot;&gt;タンク空・ホース外れを検知&lt;/span&gt;&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="90" width="245" x="35" y="275" as="geometry"/>
+                </mxCell>
+                <mxCell id="c6" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#8D6E63;strokeWidth=2;align=center;verticalAlign=middle;fontSize=15;fontColor=#4E342E;" value="&lt;font&gt;&lt;b style=&quot;&quot;&gt;⚠️ 土の劣化&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;color: rgb(84, 110, 122);&quot;&gt;水はけ・保水性の崩壊&lt;/span&gt;&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="90" width="245" x="295" y="275" as="geometry"/>
+                </mxCell>
+                <mxCell id="c7" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#5C6BC0;strokeWidth=2;align=center;verticalAlign=middle;fontSize=15;fontColor=#283593;" value="&lt;font&gt;&lt;b style=&quot;&quot;&gt;⚡ センサ外れ&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;color: rgb(84, 110, 122);&quot;&gt;断線・土から抜けた状態&lt;/span&gt;&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="90" width="250" x="555" y="275" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

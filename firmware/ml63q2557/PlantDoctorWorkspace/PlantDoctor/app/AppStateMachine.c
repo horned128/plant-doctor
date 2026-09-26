@@ -25,14 +25,11 @@ static APP_STATE s_state;                                   /**< モジュール
 static PLANT_DOCTOR_ERROR s_error;                          /**< モジュール内部状態 */
 static uint16_t s_stateTicks;                               /**< モジュール内部状態 */
 static uint16_t s_ledTicks;                                 /**< モジュール内部状態 */
-static uint16_t s_sensorDisplayTicks;                       /**< センサー画面切替までのTick */
 static uint16_t s_sensorRefreshTicks;                       /**< 表示中センサー画面更新までのTick */
 static uint16_t s_lcdRecoveryTicks;                         /**< 次のLCD復旧試行までのTick */
 static uint8_t s_lcdRecoveryAttempts;                       /**< 連続LCD復旧試行回数 */
 static uint8_t s_previousSwitchMask;                        /**< モジュール内部状態 */
-static uint8_t s_requestedSwitchMask;                       /**< モジュール内部状態 */
 static uint8_t s_sensorPage;                                /**< 表示中センサーページ */
-static bool s_uiUpdatePending;                              /**< モジュール内部状態 */
 static bool s_sensorDisplayPending;                         /**< センサー画面更新要求 */
 static bool s_pumpMessagePending;                           /**< ポンプメッセージ表示要求 */
 static const char *s_pumpMessage;                           /**< ポンプ表示メッセージ */
@@ -54,7 +51,6 @@ static void AppStateMachine_SetState(APP_STATE state) {
     s_state = state;
     s_stateTicks = 0U;
     s_ledTicks = 0U;
-    s_sensorDisplayTicks = 0U;
     s_sensorRefreshTicks = 0U;
     s_lcdRecoveryTicks = 0U;
     s_lcdRecoveryAttempts = 0U;
@@ -97,7 +93,6 @@ static void AppStateMachine_ProcessLcdRecovery(void) {
         s_lcdRecoveryActive = false;
         s_lcdRecoveryTicks = 0U;
         s_lcdRecoveryAttempts = 0U;
-        s_uiUpdatePending = true;
         s_sensorDisplayPending = true;
     } else if (s_lcdRecoveryAttempts >= PLANT_DOCTOR_LCD_RECOVERY_MAX_ATTEMPTS) {
         s_lcdRecoveryActive = false;
@@ -110,9 +105,7 @@ static void AppStateMachine_ProcessLcdRecovery(void) {
 void AppStateMachine_Init(void) {
     s_error = PLANT_DOCTOR_ERROR_NONE;
     s_previousSwitchMask = 0U;
-    s_requestedSwitchMask = 0U;
     s_sensorPage = 0U;
-    s_uiUpdatePending = false;
     s_sensorDisplayPending = false;
     s_pumpMessagePending = false;
     s_pumpMessage = 0;
@@ -161,11 +154,6 @@ void AppStateMachine_Process(void) {
             } else if (s_pumpMessagePending) {
                 s_pumpMessagePending = false;
                 if (!LcdUi_ShowPumpStatus(s_pumpMessage)) {
-                    AppStateMachine_StartLcdRecovery();
-                }
-            } else if (s_uiUpdatePending) {
-                s_uiUpdatePending = false;
-                if (!LcdUi_ShowSwitch(s_requestedSwitchMask)) {
                     AppStateMachine_StartLcdRecovery();
                 }
             } else if (s_sensorDisplayPending) {
@@ -243,12 +231,8 @@ void AppStateMachine_Tick10Ms(void) {
             s_ledTicks = 0U;
             LedControl_Toggle(LED_CONTROL_1);
         }
-        ++s_sensorDisplayTicks;
-        if (s_sensorDisplayTicks >= PLANT_DOCTOR_SENSOR_DISPLAY_TICKS) {
-            s_sensorDisplayTicks = 0U;
-            s_sensorPage = (uint8_t)((s_sensorPage + 1U) % 3U);
-            s_sensorDisplayPending = true;
-        }
+        /* 自動でのページ切り替えは行わず、SW1〜SW3で手動切り替え */
+
         ++s_sensorRefreshTicks;
         if (s_sensorRefreshTicks >= PLANT_DOCTOR_SENSOR_SAMPLE_TICKS) {
             s_sensorRefreshTicks = 0U;
@@ -319,12 +303,15 @@ void AppStateMachine_Tick10Ms(void) {
                     }
                 }
                 s_pumpMessagePending = true;
-            } else if ((switchMask & (SWITCH_CONTROL_PSW1 | SWITCH_CONTROL_PSW2 | SWITCH_CONTROL_PSW3)) != 0U) {
-                s_requestedSwitchMask = switchMask;
-                s_uiUpdatePending = true;
-            } else if (switchMask == 0U) {
-                s_requestedSwitchMask = 0U;
-                s_uiUpdatePending = true;
+            } else if ((pressedEdge & SWITCH_CONTROL_PSW1) != 0U) {
+                s_sensorPage = 0U;
+                s_sensorDisplayPending = true;
+            } else if ((pressedEdge & SWITCH_CONTROL_PSW2) != 0U) {
+                s_sensorPage = 1U;
+                s_sensorDisplayPending = true;
+            } else if ((pressedEdge & SWITCH_CONTROL_PSW3) != 0U) {
+                s_sensorPage = 2U;
+                s_sensorDisplayPending = true;
             }
         }
 

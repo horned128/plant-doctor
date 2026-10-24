@@ -7,6 +7,7 @@
 
 #include <stdbool.h>                        /* 標準Cの真偽値型 */
 #include "PlantDoctorStatus.h"              /* PlantDoctorStatusのAPIと型定義 */
+#include "PumpControl.h"                    /* 手動給水要求の結果型 */
 
 typedef enum {
     APP_STATE_BOOT = 0,
@@ -22,5 +23,6 @@ void AppStateMachine_EnterError(PLANT_DOCTOR_ERROR error);  /* AppStateMachine_E
 APP_STATE AppStateMachine_GetState(void);                   /* AppStateMachine_GetStateのAPI */
 PLANT_DOCTOR_ERROR AppStateMachine_GetError(void);          /* AppStateMachine_GetErrorのAPI */
 bool AppStateMachine_SetDemoMode(bool enable);               /* デモモード切替API */
+PUMP_CONTROL_STATUS AppStateMachine_RequestManualWatering(void); /* 手動給水要求（給水前の値を記録） */
 
 #endif /* APP_STATE_MACHINE_H */

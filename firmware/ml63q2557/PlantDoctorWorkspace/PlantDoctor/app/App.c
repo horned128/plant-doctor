@@ -53,7 +53,7 @@ static bool App_GetCalibrationCallback(uint16_t *dry, uint16_t *wet) {
 }
 
 static uint8_t App_TriggerWateringCallback(void) {
-    return (uint8_t)PumpControl_Request(true);
+    return (uint8_t)AppStateMachine_RequestManualWatering();
 }
 
 static const CONSOLE_SERVICES s_consoleServices = {
@@ -110,6 +110,7 @@ void App_Init(void) {
     }
     (void)ConsoleUart_Init(&s_consoleServices);
     (void)EbmlI2cTelemetry_Init();
+    EbmlI2cTelemetry_SetWateringHandler(App_TriggerWateringCallback);
 }
 
 /** =================================================================*

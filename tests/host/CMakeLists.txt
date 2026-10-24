@@ -81,6 +81,13 @@ add_executable(test_plant_stress
 )
 add_test(NAME test_plant_stress COMMAND test_plant_stress)
 
+# Solist-AI anomaly judgement test
+add_executable(test_ai_anomaly
+    test_ai_anomaly.c
+    ../../firmware/ml63q2557/PlantDoctorWorkspace/PlantDoctor/ai/AiAnomaly.c
+)
+add_test(NAME test_ai_anomaly COMMAND test_ai_anomaly)
+
 # LCD UI formatting test (P4-4)
 add_executable(test_lcd_ui
     test_lcd_ui.c

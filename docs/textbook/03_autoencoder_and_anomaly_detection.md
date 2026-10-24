@@ -1,184 +1,209 @@
 # 第3章 自己符号化器（Autoencoder）と多次元生体異常検知
 
-第2章で解説したルールベース診断は、土壌の乾燥や極端な過熱といった「単一指標の閾値超過」を即座に判定する上で極めて有効です。
+第2章で見たルールベースの診断は、「土壌水分が $300\text{‰}$（$30\%$）を切ったら水やり」「葉気温差 $\Delta T$ が $+2.00^\circ\text{C}$ 以上なら熱ストレス」といった明確な危険を確実に捉えます。しかし、固定のしきい値だけでは、「普段は1時間に $0.6$ ポイントずつゆっくり乾く鉢なのに、今日は1時間に $6$ ポイントの速さで乾き始め、葉温もじわじわ上がっている」といった、**しきい値に達する前の異変**には気づけません。
 
-しかし、植物の病気（青枯病や灰色かび病）、害虫の食害、あるいは根腐れの超初期段階では、どの単一センサも警戒閾値を超えません。「日照が増えたのに葉温が下がるペースがわずかに鈍い」「気温が上がったのに土壌の減りがいつもと違う」といった、**「複数のセンサ値が織りなす相関関係（共分散）の微小な破綻」**として現れます。
-
-本章では、ROHM ML63Q2557 内蔵の **Solist-AI™** が採用しているニューラルネットワーク技術 **「自己符号化器（Autoencoder）」** と、それを用いた多次元生体異常検知の数学的メカニズムについて詳細に解説します。
+また、植物の種類や鉢の大きさ、土の配合、照明との距離が違えば、「普段の乾き方」や「照明がついたときの葉温の上がり方」は鉢ごとに異なります。本章では、ROHM ML63Q2557 に内蔵された **Solist-AI™** の自己符号化器（Autoencoder）を使ってその株の「いつも」を学び、再構成誤差のずれから異常度（0〜100）と「いつもと違う」（`WARNING`）を判定する仕組み（`PlantAi.c`・`AiAnomaly.c`）を詳しく解説します。
 
 ---
 
-## 3.1 ルールベース診断の死角と教師なし異常検知の必然性
+## 3.1 なぜ「元気なときの姿だけ」を学ぶのか
 
-農業現場や植物モニタリングにおいて、従来型の If-Then ルールには越えられない壁があります。
+植物の不調には、水切れ、根詰まり、根腐れ、日照の変化、空調の直撃など多様な要因があり、あらかじめ「病気のときのデータ」を網羅して覚えさせるわけにはいきません。一方で、目の前にある鉢植えから毎日届く記録の大部分は「その株の普段どおりの姿」です。
+
+そこで Plant Doctor では、**健康なときのセンサーの組み合わせだけを自己符号化器に記憶させ、普段の調和から外れたときに復元ロス（再構成誤差）が膨らむ性質を使った教師なし異常検知**を行っています。
 
 ```mermaid
 flowchart LR
-    subgraph SENSORS["環境・生体入力"]
-        A["土壌水分: 450‰ (適正)"]
-        B["気温: 24.0℃ (適正)"]
-        C["日照: 2000 Lux (明るい)"]
-        D["葉気温差: +0.2℃ (微小異常)"]
+    subgraph INPUT["8つの入力（値と変化速度）"]
+        A["土壌水分: 460‰ (まだ300‰以上)"]
+        B["葉温の上がり方・土の乾き方が<br/>いつもより速い"]
     end
 
-    subgraph RULE["ルールベース判定"]
-        R1["土壌 < 300‰ ? -> NO"]
-        R2["ΔT ≧ +2.0℃ ? -> NO"]
-        R3["結果: 🟢 正常と誤認"]
+    subgraph RULE["ルール診断 (PlantDiagnosis)"]
+        R1["土壌水分 ≧ 300‰ かつ ΔT < +2.0℃"]
+        R2["判定: HEALTHY (まだしきい値未満)"]
     end
 
-    subgraph AE["自己符号化器 (Solist-AI™)"]
-        M1["多変量相関の検証:<br/>『2000 Luxの日照下で土壌水分が十分なら、気孔全開で ΔT は -1.2℃ になるはず』"]
-        M2["復元誤差 (MSE) の急増:<br/>『通常の相関から大きく乖離している！』"]
-        M3["結果: 🔴 潜伏期の生体異常を早期検知"]
+    subgraph AI["Solist-AI™ + AiAnomaly"]
+        M1["8-64-8 自己符号化器で復元"]
+        M2["健康時の誤差の平均・ばらつきと比較"]
+        M3["異常度 50 以上が約1分継続<br/>→ 判定: WARNING（いつもと違う）"]
     end
 
-    SENSORS --> RULE
-    SENSORS --> AE
+    INPUT --> RULE
+    INPUT --> AI
 ```
-
-### なぜ「正常データのみ」を学習するのか？
-ディープラーニングの画像分類などでは、大量の「異常（病気）のデータ」を集めて正解ラベルを付与する教師あり学習が一般的です。しかし、植物の現場ではこの手法は通用しません。
-1. **病気や障害のパターンが無数に存在する**: 根腐れ、うどんこ病、モザイク病、肥料焼け、微量要素欠乏など、異常の現れ方は無限にあります。
-2. **現場で発生するデータの 99% 以上は「正常」である**: 現場で普段稼働している鉢植えにおいて、あらゆる病気のデータを事前に網羅することは不可能です。
-
-そこで Solist-AI™ は、**「健康な状態のデータのみを学習し、未知のあらゆる異常をあぶり出す『教師なし異常検知（Unsupervised Anomaly Detection）』」** を採用しています。
 
 ---
 
-## 3.2 8次元生体特徴量空間の物理的構造
+## 3.2 Solist-AI に入れる8次元の特徴量と正規化
 
-Plant Doctor は、植物の生体状態と周辺微気象を網羅する **8次元の特徴量ベクトル $\mathbf{x} = [x_0, x_1, \dots, x_7]^T$** を構成し、AIモデルに入力します。
+`PlantAi_Process10Ms`（`ai/PlantAi.c`）では、1秒ごとに取得したセンサー値とその変化速度から **8次元の特徴量ベクトル $\mathbf{x} = [x_0, x_1, \dots, x_7]^T$** を作り、Solist-AI に入力します。
 
-```mermaid
-graph TD
-    subgraph VEC["8次元生体特徴ベクトル x"]
-        x0["x[0]: 土壌水分 (0〜1000 ‰)"]
-        x1["x[1]: 葉面温度 (10.00〜40.00 ℃)"]
-        x2["x[2]: 環境気温 (10.00〜40.00 ℃)"]
-        x3["x[3]: 葉気温差 ΔT (-4.00〜+2.00 ℃)"]
-        x4["x[4]: 相対湿度 (20.00〜100.00 %)"]
-        x5["x[5]: 照度 (0〜6000 Lux)"]
-        x6["x[6]: 葉温変化率 (-5.00〜+5.00 ℃/h)"]
-        x7["x[7]: 土壌水分変化率 (-200〜+200 ‰/h)"]
-    end
-```
+### 8つの入力項目と正規化範囲
 
-| 次元 | 物理特徴量名 | 計測レンジ（実数） | センシングの狙いと物理的意味 |
+Solist-AI の出力層は Sigmoid 活性化関数（`ODL_ACTV_SIGMOID`、出力範囲 $0.0 \sim 1.0$）を使うため、入力値も $[0.0, 1.0]$ に収める必要があります。ファームウェアでは `NormalizeToQ8` 関数で各物理量を $0 \sim 256$（固定小数点 Q8 形式の $0.0 \sim 1.0$）へ線形変換したあと、`ODL_ToBfloat16` で 16 ビット浮動小数点（`bfloat16`）の配列に変換します。
+
+| 要素 | 特徴量（変数名） | 正規化範囲（最小〜最大） | 単位・設定の意図 |
 |---|---|---|---|
-| **$x_0$** | **土壌水分** | $0 \sim 1000\text{ ‰}$ | 根圏の利用可能水分量。蒸散の供給源 |
-| **$x_1$** | **葉面温度** | $10.00 \sim 40.00^\circ\text{C}$ | 葉の熱平衡状態（日射受熱と気化熱放熱の結果） |
-| **$x_2$** | **環境気温** | $10.00 \sim 40.00^\circ\text{C}$ | 植物を取り巻く外気熱環境 |
-| **$x_3$** | **葉気温差（$\Delta T$）** | $-4.00 \sim +2.00^\circ\text{C}$ | 気孔開閉と蒸散気化冷却の直接的バロメータ |
-| **$x_4$** | **相対湿度** | $20.00 \sim 100.00\%\text{RH}$ | 大気飽差（VPD）を決定する蒸散駆動ポテンシャル |
-| **$x_5$** | **照度** | $0 \sim 6000\text{ Lux}$ | 光合成活性と光受容体による気孔開口のトリガー |
-| **$x_6$** | **葉温変化率** | $-5.00 \sim +5.00^\circ\text{C}/\text{h}$ | 急性熱ストレスや直射日光の急変に対する過渡応答 |
-| **$x_7$** | **土壌水分変化率** | $-200 \sim +200\text{ ‰}/\text{h}$ | 根の吸水速度および土壌蒸発速度の動的トレンド |
+| **$x_0$** | **土壌水分**（`soilMoisturePermille`） | $0 \sim 1000$ | $\text{‰}$（$0.0\% \sim 100.0\%$）。校正後の土壌水分 |
+| **$x_1$** | **葉面温度**（`leafTemperatureCentiC`） | $1000 \sim 4000$ | $1/100^\circ\text{C}$（$10.00^\circ\text{C} \sim 40.00^\circ\text{C}$） |
+| **$x_2$** | **環境気温**（`airTemperatureCentiC`） | $1000 \sim 4000$ | $1/100^\circ\text{C}$（$10.00^\circ\text{C} \sim 40.00^\circ\text{C}$） |
+| **$x_3$** | **葉気温差 $\Delta T$**（`leafAirTemperatureDelta`） | $-400 \sim +200$ | $1/100^\circ\text{C}$（$-4.00^\circ\text{C} \sim +2.00^\circ\text{C}$） |
+| **$x_4$** | **相対湿度**（`relativeHumidityCentiPercent`） | $2000 \sim 10000$ | $1/100\%$（$20.00\% \sim 100.00\%\text{RH}$） |
+| **$x_5$** | **照度（生値）**（`illuminanceRaw`） | $0 \sim 6000$ | **照度センサーの生値**（1カウント $\approx 0.0576\text{ lx}$、点灯時は約1350） |
+| **$x_6$** | **葉温の変化速度**（`leafTemperatureRatePerHour`） | $-300 \sim +300$ | $1/100^\circ\text{C}/\text{h}$（**$-3.00 \sim +3.00^\circ\text{C}/\text{h}$**） |
+| **$x_7$** | **土壌水分の変化速度**（`soilMoistureRatePerHour`） | $-60 \sim +60$ | $\text{‰}/\text{h}$（**$-60 \sim +60\text{‰}/\text{h}$**、すなわち $\pm 6.0\%/\text{h}$） |
 
-静的なスナップショット（現在の温度や水分）だけでなく、**「時間あたりの変化率（動的動態）」** を特徴量に組み込むことで、環境変動に対する植物の動的応答の乱れを捉えることが可能になります。
+```c
+/* ai/PlantAi.c: 8次元特徴量の Q8 正規化 (0〜256) */
+bool isRateReady = (s_featureState.minuteHistoryCount >= PLANT_DOCTOR_AI_RATE_READY_MINUTES);
+rawFeatures[0] = NormalizeToQ8(featureInput.soilMoisturePermille, 0, 1000);
+rawFeatures[1] = NormalizeToQ8(snapshot.leafTemperatureCentiC, 1000, 4000);
+rawFeatures[2] = NormalizeToQ8(snapshot.airTemperatureCentiC, 1000, 4000);
+rawFeatures[3] = NormalizeToQ8(s_featureVector.leafAirTemperatureDelta, -400, 200);
+rawFeatures[4] = NormalizeToQ8(snapshot.relativeHumidityCentiPercent, 2000, 10000);
+rawFeatures[5] = NormalizeToQ8(snapshot.illuminanceRaw, 0, 6000);
+/* 変化速度は範囲を狭め、その株らしい葉温の上がり方・土の乾き方からのずれを誤差に表れやすくする */
+rawFeatures[6] = isRateReady ? NormalizeToQ8(s_featureVector.leafTemperatureRatePerHour,
+                                             -PLANT_DOCTOR_AI_LEAF_RATE_RANGE_CENTIC,
+                                             PLANT_DOCTOR_AI_LEAF_RATE_RANGE_CENTIC) : 128;
+rawFeatures[7] = isRateReady ? NormalizeToQ8(s_featureVector.soilMoistureRatePerHour,
+                                             -PLANT_DOCTOR_AI_SOIL_RATE_RANGE_PERMILLE,
+                                             PLANT_DOCTOR_AI_SOIL_RATE_RANGE_PERMILLE) : 128;
+```
+
+### 変化速度（$x_6, x_7$）の範囲設定と起動後15分間の待機
+
+このコードには、実機とシミュレーションの検証から生まれた2つの重要な工夫が入っています。
+
+1. **変化速度の正規化範囲を狭めて感度を上げる**:
+   以前は葉温の変化速度を $\pm 5.00^\circ\text{C}/\text{h}$、土壌水分の変化速度を $\pm 200\text{‰}/\text{h}$ で正規化していました。しかしその広い範囲では、普段のゆっくりした乾き（たとえば $0.6\%/\text{h} = 6\text{‰}/\text{h}$）と異常な速さの乾き（$6\%/\text{h} = 60\text{‰}/\text{h}$）の差が $0 \sim 256$ のスケール上で小さくなり、再構成誤差に表れにくくなります。そこで `PLANT_DOCTOR_AI_LEAF_RATE_RANGE_CENTIC = 300`（$\pm 3.00^\circ\text{C}/\text{h}$）、`PLANT_DOCTOR_AI_SOIL_RATE_RANGE_PERMILLE = 60`（$\pm 60\text{‰}/\text{h}$）へと範囲を絞り、変化のしかたの違いが誤差に大きく反映されるようにしています。
+2. **履歴が15分たまるまでは中間値（`128`）を入れる**:
+   `PlantFeature.c` は1分ごとの履歴（最大60件＝60分）の最も古い点と新しい点の差から1時間あたりの変化速度を計算します。そのため、電源を入れた直後で履歴が2〜3分しかないときには、土壌水分がわずか $1\text{‰}$ 揺れただけで「1時間あたり $20 \sim 30\text{‰}/\text{h}$」と大きく拡大されてしまい、その時期に作られた誤差の基準のばらつきが大きくなって感度が落ちていました。
+   そこで、1分ごとの履歴が **15件（`PLANT_DOCTOR_AI_RATE_READY_MINUTES = 15`、約15分）** たまるまでは、`isRateReady` を `false` とし、$x_6$ と $x_7$ には「変化なし（0）」にあたる中間値 `128`（$0.5$）を入れます。
 
 ---
 
-## 3.3 入力正規化（NormalizeToQ8）と活性化関数の数学的整合性
+## 3.3 8-64-8 自己符号化器と再構成誤差（ppm）
 
-組み込みニューラルネットワークにおいて、入力データのスケール（単位系）と活性化関数の値域を数学的に一致させることは、学習の収束と推論精度を担保するための絶対条件です。
+Solist-AI アクセラレータ（`AI_PERI`）は、入力層 8 ノード・隠れ層 64 ノード・出力層 8 ノードの3層自己符号化器を実行します。入力ベクトル $\mathbf{x} \in [0.0, 1.0]^8$ を隠れ層へ圧縮して再び8次元ベクトル $\hat{\mathbf{x}}$ へ復元し、両者の二乗平均誤差（MSE）を `bfloat16` 形式で返します。
 
-### 1. 活性化関数（Hard Sigmoid）の値域
-Solist-AI™ の出力層では、省電力マイコン上での高速実行に適した **Hard Sigmoid 活性化関数** が使用されています。
+$$\text{MSE} = \frac{1}{8} \sum_{i=0}^{7} (x_i - \hat{x}_i)^2$$
 
-$$\text{HardSigmoid}(z) = \max\left(0.0, \min\left(1.0, 0.2z + 0.5\right)\right) \quad \in [\mathbf{0.0, 1.0}]$$
-
-出力層ノードが Sigmoid であるため、**AIが復元（再構成）できる出力値 $\hat{x}_i$ は数学的に厳密に $[0.0, 1.0]$ の範囲内に制限**されます。
-
-### 2. 固定小数点 $Q8$ 変換と正規化
-もし入力データとして「湿度 $6000$（$60.00\%$）」や「葉温 $2500$（$25.00^\circ\text{C}$）」といった生データをそのまま入力し、単に $2^8 = 256$ で除算（$Q8$ 変換）するだけでは、$6000 / 256 = 23.4$ や $2500 / 256 = 9.8$ となり、最大でも $1.0$ までしか出力できない Sigmoid 関数と致命的なスケール不整合（Scale Mismatch）を起こします。
-
-そこで `PlantAi.c` では、各物理量の物理的最小値（$\text{minVal}$）と最大値（$\text{maxVal}$）を $[0, 256]$（実数換算で $0.0 \sim 1.0$）へとクリップ付き線形スケーリングするインライン関数 `NormalizeToQ8` を導入しています。
-
-```c
-/* ai/PlantAi.c: 物理生値を Q8 形式の 0〜256 (実数 0.0〜1.0) に正規化 */
-static inline int16_t NormalizeToQ8(int32_t val, int32_t minVal, int32_t maxVal) {
-    if (val <= minVal) return 0;
-    if (val >= maxVal) return 256;
-    return (int16_t)(((val - minVal) * 256L) / (maxVal - minVal));
-}
-```
-
-```c
-/* 8次元特徴量の正規化実行コード */
-int16_t rawFeatures[SOLIST_AI_FEATURE_DIM];
-rawFeatures[0] = NormalizeToQ8(featureInput.soilMoisturePermille, 0, 1000);         /* 0〜1000 ‰ */
-rawFeatures[1] = NormalizeToQ8(snapshot.leafTemperatureCentiC, 1000, 4000);        /* 10〜40 ℃ */
-rawFeatures[2] = NormalizeToQ8(snapshot.airTemperatureCentiC, 1000, 4000);         /* 10〜40 ℃ */
-rawFeatures[3] = NormalizeToQ8(s_featureVector.leafAirTemperatureDelta, -400, 200);/* -4〜+2 ℃ */
-rawFeatures[4] = NormalizeToQ8(snapshot.relativeHumidityCentiPercent, 2000, 10000); /* 20〜100 % */
-rawFeatures[5] = NormalizeToQ8(snapshot.illuminanceRaw, 0, 6000);                   /* 0〜6000 Lux */
-rawFeatures[6] = NormalizeToQ8(s_featureVector.leafTemperatureRatePerHour, -500, 500);/* -5〜+5 ℃/h */
-rawFeatures[7] = NormalizeToQ8(s_featureVector.soilMoistureRatePerHour, -200, 200);   /* -200〜+200 ‰/h */
-
-/* bfloat16 浮動小数点配列へ一括変換 */
-ODL_ToBfloat16(s_solistAiInput, rawFeatures, 8U, SOLIST_AI_FEATURE_DIM);
-```
-
-この正規化により、**すべての特徴量は $[0.0, 1.0]$ の無次元空間に射影され、Sigmoid 出力層の値域と完璧に合致します**。
+ファームウェアでは `OSUAD_GetLoss()` から得た誤差を `0.0f`〜`1.0f` にクリップしたうえで $10,000$ 倍し、整数 `s_solistAiLatestLossPpm`（$0 \sim 10000\text{ ppm}$）に変換します。たとえば実機ログ（9月24日 13:00〜9月25日 22:20 の健康な状態）における再構成誤差の平均は約 $0.0235$（ばらつき約 $0.0007$）であり、ppm 表記では **約 $235\text{ ppm}$（ばらつき約 $7\text{ ppm}$）** にあたります。
 
 ---
 
-## 3.4 自己符号化器の内部構造（8-64-8）と再構成誤差（MSE）
+## 3.4 株ごとの誤差基準の学習と異常度（0〜100）の算出（`AiAnomaly.c`）
 
-Solist-AI™ のニューラルネットワークは、3層構造の自己符号化器（Autoencoder）で構成されています。
+再構成誤差の絶対値は、鉢の環境やセンサーの揺らぎ方によって少しずつ異なります。そのため「誤差が何 ppm を超えたら異常」と固定値で決めるのではなく、`AiAnomaly.c` で**その株が健康なときの再構成誤差の平均（水準）とばらつき（平均絶対偏差）を学び、そこからの上振れを異常度 0〜100 に換算**しています。
 
 ```mermaid
-graph LR
-    subgraph IN["入力層 (8ノード)"]
-        X["正規化特徴量 x ∈ [0.0, 1.0]"]
-    end
-
-    subgraph HID["隠れ層 (64ノード)"]
-        Z["潜在表現 z<br/>(植物生体パターンの主成分・相関関係の要約)"]
-    end
-
-    subgraph OUT["出力層 (8ノード)"]
-        X_HAT["復元特徴量 x̂ ∈ [0.0, 1.0]"]
-    end
-
-    IN -- "重み行列 α (エンコード)" --> HID
-    HID -- "重み行列 β (デコード)" --> OUT
+flowchart TD
+    LOSS["毎秒の再構成誤差 lossPpm"] --> VALID{"lossPpm < 10000 ppm ?"}
+    VALID -- "NO (発散・無効)" --> RET["更新せず終了"]
+    VALID -- YES --> READY{"健康サンプル 600件以上？<br/>(AiAnomaly_IsReady)"}
+    READY -- "NO (準備中)" --> ZERO["異常度 score = 0"]
+    READY -- YES --> CALC["異常度 score (0〜100) を算出<br/>平均からの上振れ ÷ (ばらつき × 8)"]
+    ZERO & CALC --> HYST["加減算カウンタによるヒステリシス判定<br/>50以上が60回で異常ON / 30未満が120回でOFF<br/>(条件から外れたら1減らす)"]
+    HYST --> BASE{"健康サンプル かつ<br/>!isAnomaly かつ score < 50 ?"}
+    BASE -- YES --> EMA["基準 (平均 meanQ16・ばらつき deviationQ16)<br/>を更新 (窓長 1024)"]
+    BASE -- NO --> DONE["基準を汚さず維持"]
 ```
 
-### 再構成誤差（MSE: Mean Squared Error）の計算
-入力された正規化特徴ベクトル $\mathbf{x}$ と、ニューラルネットワークが復元した出力ベクトル $\hat{\mathbf{x}}$ の二乗平均誤差を計算します。
+### 1. 健康時の水準と揺れ幅の学習
 
-$$\text{MSE} = \frac{1}{D} \sum_{i=0}^{D-1} (x_i - \hat{x}_i)^2 \quad (D = 8)$$
+`AiAnomaly_Update` は、次の条件をすべて満たすデータだけを「基準の算出に使ってよい健全な標本」として受け入れます。
+- ルール診断が健康かつ低負荷などの関門（`isRuleSafe`）を通過していること
+- 起動後15分が経過して推移履歴がそろっていること（`isRateReady == true`）
+- Solist-AI の累積学習回数が **100回以上**（`PLANT_DOCTOR_AI_ANOMALY_MIN_TRAIN_COUNT = 100`）に達していること
+- 現在「いつもと違う」と出ておらず（`!state->isAnomaly`）、スコアも開始ライン未満（`state->score < 50`）であること
 
-ファームウェア内部では、この浮動小数点誤差を $10,000$ 倍して整数化した PPM（Parts Per Million相当: $0 \sim 10000$）として扱い、テレメトリ経由で外部へ送信します。
+マイコン上で浮動小数点を使わずに済むよう、ppm 値を 16 ビット左シフトした Q16 固定小数点（`meanQ16`・`deviationQ16`）で保持します。最初の 1024 件未満（$n < 2^{10}$）は立ち上がりを速めるため単純平均（$1/n$）で馴染ませ、それ以降は窓長 $2^{10} = 1024$ 件（`PLANT_DOCTOR_AI_ANOMALY_BASELINE_SHIFT = 10`、約17分）の指数移動平均で緩やかに追従させます。
 
 ```c
-/* ai/PlantAi.c: 損失の取得とPPM整数化 */
-bfloat16 loss = OSUAD_GetLoss();
-float fLoss = 0.0f;
-uint32_t rawLoss32 = ((uint32_t)(uint16_t)loss) << 16;
-memcpy(&fLoss, &rawLoss32, sizeof(float));
-
-/* NaN / Inf および飽和ガード */
-if (((rawLoss32 & 0x7F800000UL) == 0x7F800000UL) || (fLoss > 1.0f)) {
-    fLoss = 1.0f;
-} else if (fLoss < 0.0f) {
-    fLoss = 0.0f;
+/* ai/AiAnomaly.c: 健康時の平均とばらつき（平均絶対偏差）の更新 */
+int32_t err = xq - state->meanQ16;
+int32_t absErr = (err < 0) ? -err : err;
+uint32_t n = state->baselineSamples + 1U;
+uint32_t window = 1UL << config->baselineShift; /* 1024 */
+if (n < window) {
+    /* 立ち上がりは単純平均で早く収束させる */
+    state->meanQ16 += err / (int32_t)n;
+    state->deviationQ16 += (absErr - state->deviationQ16) / (int32_t)n;
+} else {
+    state->meanQ16 += err / (int32_t)window;
+    state->deviationQ16 += (absErr - state->deviationQ16) / (int32_t)window;
 }
-s_solistAiLatestLossPpm = (uint16_t)(fLoss * 10000.0f);
 ```
 
-### 正常時と異常時の誤差挙動
-1. **正常データ入力時（健康な植物）**:
-   AI は学習を通じて「日照が高ければ気孔が開き、葉気温差は下がり、土壌水分は緩やかに減少する」という8変数の調和（多変量共分散）を記憶しています。したがって、入力されたデータを高精度に再構成でき、**MSE は $0.01 \sim 0.03$（PPM: 100〜300）という極小値に収束**します。
-2. **生体異常データ入力時（病気・導管閉塞・未知のストレス）**:
-   「日照が十分あるのに蒸散冷却が起きていない」「土壌水分が十分なのに葉温が異常に上昇している」といった不整合データが入力されると、AIが持つ正常知識ではこの歪んだ関係を復元できません。
-   その結果、**再構成誤差（MSE）は $0.08 \sim 0.20$ 以上（PPM: 800〜2000以上）へと急激に跳ね上がり、潜在的な生体異常アラート（Anomaly Alert）として検知**されます。
+### 2. 監視開始までの時間と異常度（0〜100）の計算式
+
+健全な標本が **600件（`PLANT_DOCTOR_AI_ANOMALY_MIN_BASELINE_SAMPLES = 600`、約10分）** 集まると `AiAnomaly_IsReady` が `true` になり、異常度の算出が始まります。変化速度の履歴がたまるまでの15分と合わせると、**電源投入から約25分で「いつもと違う」の見守りが始まる**計算です（それまでの準備中は `0` を返します）。
+
+準備完了後の `score`（$0 \sim 100$）は、足元のロスが平常水準 `meanQ16` からどれだけ上振れしたかを、普段の揺れ幅 `deviation` の倍率で表した値です。
+
+$$\text{score} = \min\left(100,\; \left\lfloor \frac{\max(0,\; \text{lossPpm} - \text{mean}) \times 100}{\max(\text{deviation},\; 15\text{ ppm}) \times 8} \right\rfloor \right)$$
+
+- **揺れ幅の下限（`minDeviationPpm = 15`）**: 室温や光が一定でロスがほとんど動かない時間帯に、分母が小さくなりすぎて過敏に反応するのを防ぐため、下限を $15\text{ ppm}$（MSE で $0.0015$）に置いています。
+- **倍率の換算（`deviationScale = 8`）**: 平常水準からの上振れが揺れ幅の **8倍** に達したときに **100**、**4倍** で開始ラインの **50** になります。たとえば水準が $235\text{ ppm}$、揺れ幅が下限の $15\text{ ppm}$ の株なら、ロスが $235 + 15 \times 4 = 295\text{ ppm}$ へ跳ね上がると 50 に達します。
+- **実機記録での裏付け**: 9月24日〜25日の実機ログ（元気な約21時間）の推移にこの式を当てはめると、最高でも **20** に収まり、警戒ラインの 50 を超えた時点は一度もありませんでした。
 
 ---
 
-## 📖 ナビゲーション
+## 3.5 外れたら1つ減らす加減算カウンタとヒステリシス
 
-**[← 第2章 多変量植物ストレス評価と自律診断アルゴリズム](02_plant_stress_scoring.md)** ｜ [目次 (README)](README.md) ｜ **[第4章 オンデバイス逐次学習（ODL）の数学と実装アーキテクチャ →](04_on_device_learning_mechanism.md)**
+復元ロスは毎秒わずかに上下するため、たった1秒だけ 50 を超えたからといって即座に `WARNING` を出すと誤報になります。かといって、「60回連続で 50 以上なら発報し、途中で1度でも 50 を割ったらゼロから数え直す」という単純な連続方式にすると、50 前後で小刻みに揺れている局面で何度も振り出しに戻され、想定値の試算でも最初に 50 を超えてから `WARNING` が出るまで 44 分を要していました。
 
+そこで `AiAnomaly.c` では、**条件を満たせば 1 増やし、外れてもゼロには戻さず 1 だけ減らす加減算カウンタ（ヒステリシス付き）** を取り入れています。
+
+```c
+/* ai/AiAnomaly.c: 1回外れても数え直さず、1つ減らすヒステリシス判定 */
+if (state->score >= config->onScore) {          /* onScore = 50 */
+    if (state->aboveCount < config->onSamples) { /* onSamples = 60 (約1分) */
+        ++state->aboveCount;
+    }
+    if (state->belowCount > 0U) {
+        --state->belowCount;
+    }
+} else if (state->score < config->offScore) {   /* offScore = 30 */
+    if (state->belowCount < config->offSamples) {/* offSamples = 120 (約2分) */
+        ++state->belowCount;
+    }
+    if (state->aboveCount > 0U) {
+        --state->aboveCount;
+    }
+} else {                                        /* 30 <= score < 50 */
+    if (state->aboveCount > 0U) {
+        --state->aboveCount;
+    }
+    if (state->belowCount > 0U) {
+        --state->belowCount;
+    }
+}
+if (!state->isAnomaly && (state->aboveCount >= config->onSamples)) {
+    state->isAnomaly = true;
+    state->belowCount = 0U;
+} else if (state->isAnomaly && (state->belowCount >= config->offSamples)) {
+    state->isAnomaly = false;
+    state->aboveCount = 0U;
+}
+```
+
+| 設定項目 | マクロ名 | 設定値 | 意味 |
+|---|---|---|---|
+| **開始スコア** | `PLANT_DOCTOR_AI_ANOMALY_ON_SCORE` | **50** | この値以上で `aboveCount` を $+1$ する |
+| **開始サンプル数** | `PLANT_DOCTOR_AI_ANOMALY_ON_SAMPLES` | **60**（約1分） | `aboveCount` が 60 に達したら `isAnomaly = true`（`WARNING`）にする |
+| **解除スコア** | `PLANT_DOCTOR_AI_ANOMALY_OFF_SCORE` | **30** | この値未満で `belowCount` を $+1$ する |
+| **解除サンプル数** | `PLANT_DOCTOR_AI_ANOMALY_OFF_SAMPLES` | **120**（約2分） | `belowCount` が 120 に達したら `isAnomaly = false` に戻す |
+
+カウンタの上限をそれぞれ `60` と `120` で頭打ちにしているため、平常状態が何時間続いたあとでも、異変が起きれば最短約1分で `WARNING` になり、収まれば最短約2分で解除されます。
+
+さらに、水やりが行われた直後は土壌水分の変化速度が大きく振れるため、`AiAnomaly_ClearJudgement` によって**学習済みの基準（`meanQ16`・`deviationQ16`・`baselineSamples`）はそのまま残し、判定状態（`score`・`isAnomaly`・カウンタ）だけをリセットして1時間半休止**します。この給水後の休止と、健康なモデルを汚さないための7つの学習関門については、次の第4章で詳しく解説します。
+
+---
+
+## ナビゲーション
+
+**[← 第2章 多変量植物ストレス評価と自律診断アルゴリズム](02_plant_stress_scoring.md)** ｜ [目次 (README)](README.md) ｜ **[第4章 オンデバイス逐次学習（ODL）の数学と7つの関門 →](04_on_device_learning_mechanism.md)**

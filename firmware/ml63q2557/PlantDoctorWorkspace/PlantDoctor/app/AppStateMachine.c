@@ -204,6 +204,36 @@ void AppStateMachine_Process(void) {
 }
 
 /** =================================================================*
+ * @brief  手動給水要求
+ * @details SW4・コンソールの W・ATOMS3 Lite からの指示で使う。給水前の土壌水分と葉温差を記録してから
+ *          ポンプを動かす（記録しないと給水応答の判定が誤る）。監視中以外は受け付けない。
+ * @return ポンプ制御の結果（監視中以外は PUMP_CONTROL_STATUS_ERROR）
+ * ================================================================= */
+PUMP_CONTROL_STATUS AppStateMachine_RequestManualWatering(void) {
+    PLANT_SENSOR_SNAPSHOT snapshot;
+    uint32_t nowSec = 0xFFFFFFFFU;
+    uint16_t soilRaw = 0U;
+    int16_t soilPermille = 0;
+    int16_t leafAirDelta = 0;
+
+    if (s_state != APP_STATE_MONITOR) {
+        return PUMP_CONTROL_STATUS_ERROR;
+    }
+    if (SensorManager_GetLatest(&snapshot)) {
+        uint16_t calDry;
+        uint16_t calWet;
+
+        SoilCalibration_Get(&calDry, &calWet);
+        nowSec = snapshot.timestampSeconds;
+        soilRaw = snapshot.soilMoistureRaw;
+        soilPermille = SoilCalibration_ToPermille(snapshot.soilMoistureRaw, calDry, calWet);
+        leafAirDelta = (int16_t)(snapshot.leafTemperatureCentiC - snapshot.airTemperatureCentiC);
+    }
+    PumpControl_SetPreWateringContext(nowSec, soilRaw, soilPermille, leafAirDelta, false);
+    return PumpControl_Request(true);
+}
+
+/** =================================================================*
  * @brief  AppStateMachine_Tick10Ms処理
  * ================================================================= */
 void AppStateMachine_Tick10Ms(void) {
@@ -215,6 +245,15 @@ void AppStateMachine_Tick10Ms(void) {
     }
     ++s_appTick;
     TimeKeeper_Tick10Ms();
+
+    /* デモモードのずらし値を、診断の入力にも反映する（AIの入力と学習には入らない） */
+    if (DemoMode_IsActive(&s_demoModeState)) {
+        PlantAi_SetDemoAdjustment(s_demoModeState.offsets.leafTemperatureOffsetCentiC,
+                                  s_demoModeState.offsets.soilMoistureOffsetPermille,
+                                  s_demoModeState.offsets.forceSoilSensorError);
+    } else {
+        PlantAi_SetDemoAdjustment(0, 0, false);
+    }
 
     /* 給水完了イベントを取り出してAIおよび自律ポリシー、ログへ通知 */
     if (PumpControl_TakeWateringEvent(&wateringEvent)) {
@@ -270,26 +309,10 @@ void AppStateMachine_Tick10Ms(void) {
                     s_pumpMessage = "PUMP STOPPED";
                     s_pumpUiHoldTicks = PLANT_DOCTOR_PUMP_MESSAGE_TICKS;
                 } else {
-                    PLANT_SENSOR_SNAPSHOT snapshot;
-                    uint32_t nowSec = 0xFFFFFFFFU;
-                    uint16_t soilRaw = 0U;
-                    int16_t soilPermille = 0;
-                    int16_t leafAirDelta = 0;
-                    PUMP_CONTROL_STATUS status;
-
-                    if (SensorManager_GetLatest(&snapshot)) {
-                        nowSec = snapshot.timestampSeconds;
-                        soilRaw = snapshot.soilMoistureRaw;
-                        soilPermille = SoilCalibration_ToPermille(snapshot.soilMoistureRaw,
-                                                                 PLANT_DOCTOR_SOIL_CAL_DEFAULT_DRY,
-                                                                 PLANT_DOCTOR_SOIL_CAL_DEFAULT_WET);
-                        leafAirDelta = (int16_t)(snapshot.leafTemperatureCentiC - snapshot.airTemperatureCentiC);
-                    }
-                    PumpControl_SetPreWateringContext(nowSec, soilRaw, soilPermille, leafAirDelta, false);
-                    status = PumpControl_Request(true);
+                    PUMP_CONTROL_STATUS status = AppStateMachine_RequestManualWatering();
 
                     if (status == PUMP_CONTROL_STATUS_OK) {
-                        s_pumpMessage = "WATERING 2.0s";
+                        s_pumpMessage = "WATERING";
                         s_pumpUiHoldTicks = PLANT_DOCTOR_PUMP_MAX_ON_TICKS;
                     } else if (status == PUMP_CONTROL_STATUS_EMPTY) {
                         s_pumpMessage = "TANK EMPTY!";
@@ -320,10 +343,14 @@ void AppStateMachine_Tick10Ms(void) {
             PLANT_SENSOR_SNAPSHOT snapshot;
             if (SensorManager_GetLatest(&snapshot)) {
                 WATERING_POLICY_INPUT policyInput;
-                int16_t soilPermille = SoilCalibration_ToPermille(
-                    snapshot.soilMoistureRaw,
-                    PLANT_DOCTOR_SOIL_CAL_DEFAULT_DRY,
-                    PLANT_DOCTOR_SOIL_CAL_DEFAULT_WET);
+                uint16_t calDry;
+                uint16_t calWet;
+                int16_t soilPermille;
+                int16_t realSoilPermille;
+
+                SoilCalibration_Get(&calDry, &calWet);
+                soilPermille = SoilCalibration_ToPermille(snapshot.soilMoistureRaw, calDry, calWet);
+                realSoilPermille = soilPermille;
                 SENSOR_HEALTH soilHealth = snapshot.soilMoistureValid ? SENSOR_HEALTH_OK : SENSOR_HEALTH_NO_COMMUNICATION;
                 bool tankLiquid = TankLevelSensor_IsLiquidDetected();
 
@@ -347,9 +374,10 @@ void AppStateMachine_Tick10Ms(void) {
 
                 if (WateringPolicy_Evaluate(&s_wateringPolicyState, &policyInput, &s_wateringPolicyConfig) == WATERING_DECISION_REQUEST) {
                     int16_t leafAirDelta = (int16_t)(snapshot.leafTemperatureCentiC - snapshot.airTemperatureCentiC);
+                    /* 給水前の値は実測値を記録する（デモのずらし値を入れると給水応答の判定が狂う） */
                     PumpControl_SetPreWateringContext(snapshot.timestampSeconds,
                                                       snapshot.soilMoistureRaw,
-                                                      soilPermille,
+                                                      realSoilPermille,
                                                       leafAirDelta,
                                                       true);
                     if (PumpControl_Request(true) == PUMP_CONTROL_STATUS_OK) {

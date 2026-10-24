@@ -69,11 +69,34 @@
 #define PLANT_DOCTOR_RESP_TIMEOUT_SECONDS            (600U)    /* 測定上限タイムアウト [秒] */
 #define PLANT_DOCTOR_RESP_MIN_SOIL_RECOVERY_PERMILLE (50)      /* 回復判定最小土壌水分増加量 [‰] */
 #define PLANT_DOCTOR_RESP_MIN_TEMP_DROP_CENTIC       (30)      /* 葉温回復判定最小低下量 [1/100 ℃] */
+#define PLANT_DOCTOR_RESP_FAILED_HOLD_SECONDS        (1800UL)  /* 給水失敗を保つ時間 [秒]。過ぎたら解除し自律給水を再開できる */
 
 /* P6-2 土壌劣化推定設定（TODO(P2-7): 実測に基づく調整予定の暫定値） */
 #define PLANT_DOCTOR_DEGRADE_REQUIRED_CYCLES         (3U)      /* 劣化判定に必要な連続サイクル数 */
 #define PLANT_DOCTOR_DEGRADE_MIN_GAIN_PERMILLE       (80)      /* 保水性低下判定の増加量下限 [‰] */
 #define PLANT_DOCTOR_DEGRADE_FAST_DRY_RATE           (-25)     /* 異常急速低下速度 [‰/h] */
+
+/* Solist-AI による「いつもと違う」判定（再構成誤差の、その株の平常値からのずれ）
+ * TODO: 実機で誤差の水準を見て調整する暫定値。サンプルは1秒ごと */
+#define PLANT_DOCTOR_AI_ANOMALY_ENABLE                (true)    /* 判定の有効/無効 */
+#define PLANT_DOCTOR_AI_ANOMALY_MIN_TRAIN_COUNT       (100U)    /* 基準を作り始める学習回数 */
+#define PLANT_DOCTOR_AI_ANOMALY_BASELINE_SHIFT        (10U)     /* 基準の移動平均 1/1024（約17分） */
+#define PLANT_DOCTOR_AI_ANOMALY_MIN_BASELINE_SAMPLES  (600UL)   /* 判定開始までの健康サンプル数（約10分） */
+#define PLANT_DOCTOR_AI_ANOMALY_MIN_DEVIATION_PPM     (15U)     /* ばらつきの下限 [ppm] */
+#define PLANT_DOCTOR_AI_ANOMALY_DEVIATION_SCALE       (8U)      /* 異常度100 = ばらつきの8倍 */
+#define PLANT_DOCTOR_AI_ANOMALY_ON_SCORE              (50U)     /* 「いつもと違う」の開始スコア */
+#define PLANT_DOCTOR_AI_ANOMALY_OFF_SCORE             (30U)     /* 解除スコア */
+#define PLANT_DOCTOR_AI_ANOMALY_ON_SAMPLES            (60U)     /* 約1分続いたら判定 */
+#define PLANT_DOCTOR_AI_ANOMALY_OFF_SAMPLES           (120U)    /* 約2分続いたら解除 */
+#define PLANT_DOCTOR_AI_ANOMALY_RELEARN_EVERY_SAMPLES (60U)     /* いつもと違う間は約1分に1回だけ学ぶ */
+/* 学び直しが早すぎると、ゆっくり進む乾燥まで「いつも」として覚えてしまう（想定値の計算で確認） */
+#define PLANT_DOCTOR_AI_ANOMALY_RELEARN_AFTER_SAMPLES (10800U)  /* 約3時間続いたら新しいいつもとして学び直す */
+/* 変化速度は直近60分の履歴で計算する。給水後は土が湿り終わってから履歴が入れ替わるまで、起動直後は履歴がたまるまで、
+ * 変化速度をAIの判定に使わない */
+#define PLANT_DOCTOR_AI_POST_WATERING_HOLD_SAMPLES    (5400U)   /* 給水後にAIの判定と学習を休むサンプル数（約1時間半） */
+#define PLANT_DOCTOR_AI_RATE_READY_MINUTES            (15U)     /* 変化速度をAIへ入れ始める履歴の長さ [分] */
+#define PLANT_DOCTOR_AI_LEAF_RATE_RANGE_CENTIC        (300)     /* 葉温の変化速度の正規化範囲 ±3.00℃/h */
+#define PLANT_DOCTOR_AI_SOIL_RATE_RANGE_PERMILLE      (60)      /* 土壌水分の変化速度の正規化範囲 ±60‰/h */
 
 /* P8-1 デモモード設定 */
 #define PLANT_DOCTOR_DEMO_MODE_ENABLE                (true)    /* デモモード機能有効フラグ */

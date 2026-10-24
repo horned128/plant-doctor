@@ -13,6 +13,7 @@
 #include "WateringResponse.h"                              /* 給水応答自己診断API */
 #include "PumpControl.h"                                   /* ポンプ制御API */
 #include "Board.h"                                         /* ウォッチドッグ制御API */
+#include "AiAnomaly.h"                                     /* 再構成誤差による「いつもと違う」判定 */
 #if defined(__arm__)
 #include "solistAi.h"                                      /* ROHM Solist-AI アクセラレータAPI */
 #include "smpl_common.h"                                   /* 共通周辺機能クロック制御API (AI_PERI) */
@@ -39,6 +40,12 @@ static uint8_t s_stressScore;                               /**< 最新ストレ
 static uint32_t s_solistAiTrainCount = 0U;                  /**< 累積オンデバイス学習回数 */
 static uint16_t s_solistAiLatestLossPpm = 250U;             /**< 最新再構成損失 (PPM: 0..10000) */
 static uint8_t  s_solistAiPhase = 0U;                       /**< 学習フェーズ (0:Profiling, 1:Stabilizing, 2:Monitoring) */
+static AI_ANOMALY_STATE s_aiAnomaly;                        /**< その株の「いつも」からのずれの判定状態 */
+static AI_ANOMALY_CONFIG s_aiAnomalyConfig;                 /**< 「いつもと違う」判定の設定 */
+static uint16_t s_aiPostWateringHoldSamples;                /**< 給水後、AIの判定と学習を休む残りサンプル数 */
+static int16_t s_demoLeafOffsetCentiC;                      /**< デモ: 診断用の葉温オフセット [1/100 ℃] */
+static int16_t s_demoSoilOffsetPermille;                    /**< デモ: 診断用の土壌水分オフセット [‰] */
+static bool s_demoForceSoilError;                           /**< デモ: 診断用に土壌センサー異常を模す */
 
 /**
  * @brief センサー生値を Q8 形式の 0〜256 (実数 0.0〜1.0) に正規化
@@ -51,6 +58,29 @@ static inline int16_t NormalizeToQ8(int32_t val, int32_t minVal, int32_t maxVal)
         return 256;
     }
     return (int16_t)(((val - minVal) * 256L) / (maxVal - minVal));
+}
+
+/** =================================================================*
+ * @brief  デモモードの診断用オフセット適用
+ * @param[in,out] features 診断・ストレス用の特徴量（コピー）
+ * @param[in,out] health   診断・ストレス用のセンサー健全性（コピー）
+ * @return オフセットを当てたらtrue（その間はAIに学習させない）
+ * ================================================================= */
+static bool PlantAi_ApplyDemoAdjustment(PLANT_FEATURE_VECTOR *features, SENSOR_HEALTH_REPORT *health) {
+    int32_t soil;
+
+    if ((s_demoLeafOffsetCentiC == 0) && (s_demoSoilOffsetPermille == 0) && !s_demoForceSoilError) {
+        return false;
+    }
+    soil = features->soilMoisturePermille + s_demoSoilOffsetPermille;
+    features->soilMoisturePermille = (soil < 0) ? 0 : ((soil > 1000) ? 1000 : soil);
+    soil = features->soilMoistureMovingAverage + s_demoSoilOffsetPermille;
+    features->soilMoistureMovingAverage = (soil < 0) ? 0 : ((soil > 1000) ? 1000 : soil);
+    features->leafAirTemperatureDelta += s_demoLeafOffsetCentiC;
+    if (s_demoForceSoilError) {
+        health->soilHealth = SENSOR_HEALTH_OUT_OF_RANGE;
+    }
+    return true;
 }
 
 /** =================================================================*
@@ -76,10 +106,11 @@ bool PlantAi_Init(void) {
 
     /* ストレス計算しきい値・重みの初期設定 */
     s_stressConfig.baseStressScore = PLANT_DOCTOR_STRESS_BASE_SCORE;
-    s_stressConfig.weightSoil = 100U;
-    s_stressConfig.weightHeat = 100U;
-    s_stressConfig.weightLight = 80U;
-    s_stressConfig.weightHumidity = 60U;
+    /* 重みは設定ファイルの値を使う（以前はここに 100/100/80/60 を直接書いており、設定が反映されていなかった） */
+    s_stressConfig.weightSoil = PLANT_DOCTOR_STRESS_WEIGHT_SOIL;
+    s_stressConfig.weightHeat = PLANT_DOCTOR_STRESS_WEIGHT_HEAT;
+    s_stressConfig.weightLight = PLANT_DOCTOR_STRESS_WEIGHT_LIGHT;
+    s_stressConfig.weightHumidity = PLANT_DOCTOR_STRESS_WEIGHT_HUMIDITY;
     s_stressConfig.maxDominanceWeight = PLANT_DOCTOR_STRESS_MAX_DOMINANCE_WEIGHT;
     s_stressConfig.baselineSoilMoisturePermille = PLANT_DOCTOR_STRESS_BASELINE_SOIL_PERMILLE;
     s_stressConfig.baselineTempDeltaCentiC = PLANT_DOCTOR_STRESS_BASELINE_TEMP_DELTA;
@@ -101,9 +132,27 @@ bool PlantAi_Init(void) {
     s_wateringRespConfig.minTempDropCentic = PLANT_DOCTOR_RESP_MIN_TEMP_DROP_CENTIC;
     s_wateringRespConfig.degradeRequiredCycles = PLANT_DOCTOR_DEGRADE_REQUIRED_CYCLES;
     s_wateringRespConfig.degradeMinGainPermille = PLANT_DOCTOR_DEGRADE_MIN_GAIN_PERMILLE;
+    s_wateringRespConfig.failedHoldTicks = PLANT_DOCTOR_RESP_FAILED_HOLD_SECONDS * 100UL;
     s_aiTick = 0U;
 
     s_stressScore = PLANT_STRESS_UNKNOWN;
+
+    /* 「いつもと違う」判定の設定（再構成誤差の、その株の平常値からのずれ） */
+    AiAnomaly_Reset(&s_aiAnomaly);
+    s_aiPostWateringHoldSamples = 0U;
+    s_demoLeafOffsetCentiC = 0;
+    s_demoSoilOffsetPermille = 0;
+    s_demoForceSoilError = false;
+    s_aiAnomalyConfig.baselineShift = PLANT_DOCTOR_AI_ANOMALY_BASELINE_SHIFT;
+    s_aiAnomalyConfig.minBaselineSamples = PLANT_DOCTOR_AI_ANOMALY_MIN_BASELINE_SAMPLES;
+    s_aiAnomalyConfig.minDeviationPpm = PLANT_DOCTOR_AI_ANOMALY_MIN_DEVIATION_PPM;
+    s_aiAnomalyConfig.deviationScale = PLANT_DOCTOR_AI_ANOMALY_DEVIATION_SCALE;
+    s_aiAnomalyConfig.onScore = PLANT_DOCTOR_AI_ANOMALY_ON_SCORE;
+    s_aiAnomalyConfig.offScore = PLANT_DOCTOR_AI_ANOMALY_OFF_SCORE;
+    s_aiAnomalyConfig.onSamples = PLANT_DOCTOR_AI_ANOMALY_ON_SAMPLES;
+    s_aiAnomalyConfig.offSamples = PLANT_DOCTOR_AI_ANOMALY_OFF_SAMPLES;
+    s_aiAnomalyConfig.relearnEverySamples = PLANT_DOCTOR_AI_ANOMALY_RELEARN_EVERY_SAMPLES;
+    s_aiAnomalyConfig.relearnAfterSamples = PLANT_DOCTOR_AI_ANOMALY_RELEARN_AFTER_SAMPLES;
 
 #if defined(__arm__)
     smpl_enablePeripheral(AI_PERI);
@@ -143,12 +192,16 @@ void PlantAi_Process10Ms(void) {
         PLANT_STRESS_OUTPUT stressOutput;
         WATERING_RESPONSE_INPUT respInput;
         WATERING_RESPONSE respResult;
+        PLANT_FEATURE_VECTOR diagFeatures;
+        SENSOR_HEALTH_REPORT diagHealth;
+        bool isDemoAdjusted;
+        uint16_t calDry;
+        uint16_t calWet;
 
         /* 1. 特徴量抽出の更新 */
-        featureInput.soilMoisturePermille = (int32_t)SoilCalibration_ToPermille(
-            snapshot.soilMoistureRaw,
-            PLANT_DOCTOR_SOIL_CAL_DEFAULT_DRY,
-            PLANT_DOCTOR_SOIL_CAL_DEFAULT_WET);
+        /* 校正値はコンソールの C= で変えられるので、定数ではなく現在の設定を使う */
+        SoilCalibration_Get(&calDry, &calWet);
+        featureInput.soilMoisturePermille = (int32_t)SoilCalibration_ToPermille(snapshot.soilMoistureRaw, calDry, calWet);
         featureInput.soilMoistureValid = snapshot.soilMoistureValid;
         featureInput.leafTemperatureCentiC = snapshot.leafTemperatureCentiC;
         featureInput.leafTemperatureValid = snapshot.leafTemperatureValid;
@@ -174,8 +227,8 @@ void PlantAi_Process10Ms(void) {
         plausInput.relativeHumidityValid = snapshot.airTemperatureValid;
         plausInput.illuminanceRaw = snapshot.illuminanceRaw;
         plausInput.illuminanceValid = snapshot.illuminanceValid;
-        plausInput.soilDryCalibration = PLANT_DOCTOR_SOIL_CAL_DEFAULT_DRY;
-        plausInput.soilWetCalibration = PLANT_DOCTOR_SOIL_CAL_DEFAULT_WET;
+        plausInput.soilDryCalibration = calDry;
+        plausInput.soilWetCalibration = calWet;
 
         SensorPlausibility_Evaluate(&s_plausibilityState, &plausInput);
         SensorPlausibility_GetReport(&s_plausibilityState, &healthReport);
@@ -191,12 +244,16 @@ void PlantAi_Process10Ms(void) {
         WateringResponse_Update(&s_wateringRespState, &respInput, &s_wateringRespConfig);
         respResult = WateringResponse_GetResult(&s_wateringRespState);
 
-        /* 4. 原因候補・土壌傾向の推定 */
-        diagInput.features = s_featureVector;
-        diagInput.soilHealth = healthReport.soilHealth;
-        diagInput.leafHealth = healthReport.leafHealth;
-        diagInput.airHumHealth = healthReport.airHumHealth;
-        diagInput.luxHealth = healthReport.luxHealth;
+        /* 4. 原因候補・土壌傾向の推定
+         * デモモードのずらし値は診断とストレスの入力にだけ入れ、AIの入力と給水応答の判定には入れない */
+        diagFeatures = s_featureVector;
+        diagHealth = healthReport;
+        isDemoAdjusted = PlantAi_ApplyDemoAdjustment(&diagFeatures, &diagHealth);
+        diagInput.features = diagFeatures;
+        diagInput.soilHealth = diagHealth.soilHealth;
+        diagInput.leafHealth = diagHealth.leafHealth;
+        diagInput.airHumHealth = diagHealth.airHumHealth;
+        diagInput.luxHealth = diagHealth.luxHealth;
         diagInput.isWateringActive = PumpControl_IsOn();
         diagInput.isWateringFailed = (respResult == WATERING_RESPONSE_FAILED);
         diagInput.isSoilDegraded = WateringResponse_IsSoilDegraded(&s_wateringRespState);
@@ -205,21 +262,34 @@ void PlantAi_Process10Ms(void) {
         PlantDiagnosis_Update(&s_diagnosisState, &diagInput, &s_diagConfig);
 
         /* 5. ストレスバロメータの算出 */
-        PlantStress_Evaluate(&s_featureVector, &healthReport, &s_stressConfig, &stressOutput);
+        PlantStress_Evaluate(&diagFeatures, &diagHealth, &s_stressConfig, &stressOutput);
         s_stressScore = stressOutput.stressScore;
 
         /* 6. Solist-AI オンデバイス推論および定常学習 */
 #if defined(__arm__)
+        /* 給水後しばらくは、土壌水分の変化速度に給水の影響が残る（直近60分で計算するため）。
+         * その間は「いつもと違う」の判定も学習もしない（給水の影響を異常とも、いつもとも扱わない） */
+        bool isPostWateringHold = (s_aiPostWateringHoldSamples > 0U);
+        if (isPostWateringHold) {
+            --s_aiPostWateringHoldSamples;
+        }
         if (s_solistAiInitialized) {
             int16_t rawFeatures[SOLIST_AI_FEATURE_DIM];
+            /* 起動直後は変化速度の履歴が短く値が大きく振れるので、履歴がたまるまでは中間値（変化なし）を入れる */
+            bool isRateReady = (s_featureState.minuteHistoryCount >= PLANT_DOCTOR_AI_RATE_READY_MINUTES);
             rawFeatures[0] = NormalizeToQ8(featureInput.soilMoisturePermille, 0, 1000);
             rawFeatures[1] = NormalizeToQ8(snapshot.leafTemperatureCentiC, 1000, 4000);
             rawFeatures[2] = NormalizeToQ8(snapshot.airTemperatureCentiC, 1000, 4000);
             rawFeatures[3] = NormalizeToQ8(s_featureVector.leafAirTemperatureDelta, -400, 200);
             rawFeatures[4] = NormalizeToQ8(snapshot.relativeHumidityCentiPercent, 2000, 10000);
             rawFeatures[5] = NormalizeToQ8(snapshot.illuminanceRaw, 0, 6000);
-            rawFeatures[6] = NormalizeToQ8(s_featureVector.leafTemperatureRatePerHour, -500, 500);
-            rawFeatures[7] = NormalizeToQ8(s_featureVector.soilMoistureRatePerHour, -200, 200);
+            /* 変化速度は範囲を狭め、その株らしい葉温の上がり方・土の乾き方からのずれを誤差に表れやすくする */
+            rawFeatures[6] = isRateReady ? NormalizeToQ8(s_featureVector.leafTemperatureRatePerHour,
+                                                         -PLANT_DOCTOR_AI_LEAF_RATE_RANGE_CENTIC,
+                                                         PLANT_DOCTOR_AI_LEAF_RATE_RANGE_CENTIC) : 128;
+            rawFeatures[7] = isRateReady ? NormalizeToQ8(s_featureVector.soilMoistureRatePerHour,
+                                                         -PLANT_DOCTOR_AI_SOIL_RATE_RANGE_PERMILLE,
+                                                         PLANT_DOCTOR_AI_SOIL_RATE_RANGE_PERMILLE) : 128;
 
             ODL_ToBfloat16(s_solistAiInput, rawFeatures, 8U, SOLIST_AI_FEATURE_DIM);
 
@@ -247,19 +317,46 @@ void PlantAi_Process10Ms(void) {
                 /* 初期プロファイリング(100回未満)は起動直後の積算照度立ち上がりや日常微乾燥を考慮して
                  * 総合閾値を50に緩和。ただし致命的な土壌乾燥や熱ストレス（部分スコア>=40）が
                  * 発生している場合は絶対に学習させない多層防御インターロックを適用。 */
-                bool isSafeToTrain = false;
+                bool isRuleSafe = false;
+                bool isSafeToTrain;
+                /* 給水後（変化速度に給水の影響が残る約1時間半と、給水の効果を測っている間）と、
+                 * デモモードで診断の入力をずらしている間は学ばない */
                 if (s_diagnosisState.status == PLANT_STATUS_HEALTHY &&
+                    !isPostWateringHold &&
+                    !isDemoAdjusted &&
+                    respResult != WATERING_RESPONSE_MEASURING &&
                     healthReport.soilHealth == SENSOR_HEALTH_OK &&
                     healthReport.leafHealth == SENSOR_HEALTH_OK &&
                     healthReport.airHumHealth == SENSOR_HEALTH_OK &&
                     healthReport.luxHealth == SENSOR_HEALTH_OK) {
                     if (s_stressScore < 30U) {
-                        isSafeToTrain = true;
+                        isRuleSafe = true;
                     } else if ((s_solistAiTrainCount < 100U) &&
                                (s_stressScore < 50U) &&
                                (stressOutput.soilPartialScore < 40U) &&
                                (stressOutput.heatPartialScore < 40U)) {
-                        isSafeToTrain = true;
+                        isRuleSafe = true;
+                    }
+                }
+
+                /* その株の「いつも」からのずれ（異常度）を更新する。基準（平常時の誤差の水準とばらつき）は、
+                 * ルール上健康で、変化速度の履歴がそろい、モデルの学習が進んだサンプルだけで作る。
+                 * 給水後は判定を休み、基準だけを残す */
+                if (isPostWateringHold) {
+                    AiAnomaly_ClearJudgement(&s_aiAnomaly);
+                } else {
+                    AiAnomaly_Update(&s_aiAnomaly, &s_aiAnomalyConfig, s_solistAiLatestLossPpm,
+                                     isRuleSafe && isRateReady &&
+                                     (s_solistAiTrainCount >= PLANT_DOCTOR_AI_ANOMALY_MIN_TRAIN_COUNT));
+                }
+                isSafeToTrain = isRuleSafe;
+                if (PLANT_DOCTOR_AI_ANOMALY_ENABLE) {
+                    /* いつもと違う間は学習を絞る（異常をいつもとして覚えない）。
+                     * ただし長く続いたら新しいいつもとして学び直す（照明の切り替え・置き場所の変更など） */
+                    isSafeToTrain = AiAnomaly_AllowTraining(&s_aiAnomaly, &s_aiAnomalyConfig, isRuleSafe);
+                    /* ルール上は健康でも、AIが「いつもと違う」と判定したら WARNING として知らせる */
+                    if ((s_diagnosisState.status == PLANT_STATUS_HEALTHY) && AiAnomaly_IsAnomaly(&s_aiAnomaly)) {
+                        s_diagnosisState.status = PLANT_STATUS_WARNING;
                     }
                 }
 
@@ -270,6 +367,10 @@ void PlantAi_Process10Ms(void) {
                             OSUAD_Initialize(&s_solistAiParams, 1U);
                             s_solistAiDivergenceCount = 0U;
                             s_solistAiLatestLossPpm = 250U;
+                            /* モデルを作り直したら、学習の段階と異常度の基準も最初から作り直す */
+                            s_solistAiTrainCount = 0U;
+                            s_solistAiPhase = 0U;
+                            AiAnomaly_Reset(&s_aiAnomaly);
                         }
                     } else {
                         s_solistAiDivergenceCount = 0U;
@@ -291,13 +392,20 @@ void PlantAi_Process10Ms(void) {
                         }
                     } else {
                         s_solistAiInitialized = false;
+                        /* AIを止めたら異常度も送らない */
+                        AiAnomaly_Reset(&s_aiAnomaly);
                     }
                 }
             } else {
                 /* 加速器タイムアウト時は以降のAI実行を安全に抑止しシステム動作を継続 */
                 s_solistAiInitialized = false;
+                /* AIを止めたら異常度も送らない */
+                AiAnomaly_Reset(&s_aiAnomaly);
             }
         }
+#else
+        /* Solist-AI のないホスト環境では、デモの補正有無は学習判定に使わない */
+        (void)isDemoAdjusted;
 #endif
     }
 }
@@ -358,7 +466,12 @@ uint8_t PlantAi_GetStressScore(void) {
  * @param[in] currentTick 現在のTick
  * ================================================================= */
 void PlantAi_NotifyWatering(const PUMP_WATERING_EVENT *event, uint32_t currentTick) {
-    WateringResponse_NotifyWatering(&s_wateringRespState, event, currentTick);
+    /* 給水応答の経過時間は、判定側（PlantAi_Process10Ms）と同じ s_aiTick で測る */
+    (void)currentTick;
+    WateringResponse_NotifyWatering(&s_wateringRespState, event, s_aiTick);
+    /* 給水後は約1時間半、AIの判定と学習を休む（給水で直前の「いつもと違う」も解除する） */
+    s_aiPostWateringHoldSamples = PLANT_DOCTOR_AI_POST_WATERING_HOLD_SAMPLES;
+    AiAnomaly_ClearJudgement(&s_aiAnomaly);
 }
 
 /** =================================================================*
@@ -395,4 +508,33 @@ uint16_t PlantAi_GetSolistLossPpm(void) {
  * ================================================================= */
 uint8_t PlantAi_GetSolistPhase(void) {
     return s_solistAiPhase;
+}
+
+/** =================================================================*
+ * @brief  Solist-AI 異常度取得
+ * @return その株の「いつも」からのずれ 0〜100（準備中・給水後の休止中は0）
+ * ================================================================= */
+uint8_t PlantAi_GetAiAnomalyScore(void) {
+    return AiAnomaly_GetScore(&s_aiAnomaly);
+}
+
+/** =================================================================*
+ * @brief  Solist-AI「いつもと違う」判定取得
+ * @return 判定中ならtrue
+ * ================================================================= */
+bool PlantAi_IsAiAnomaly(void) {
+    return AiAnomaly_IsAnomaly(&s_aiAnomaly);
+}
+
+/** =================================================================*
+ * @brief  デモモードの診断用オフセット設定
+ * @details 診断とストレスの入力にだけ加え、Solist-AI の入力・学習・給水応答の判定には使わない。
+ * @param[in] leafOffsetCentiC     葉温に加えるオフセット [1/100 ℃]
+ * @param[in] soilOffsetPermille   土壌水分に加えるオフセット [‰]
+ * @param[in] forceSoilSensorError 土壌センサー異常を模すならtrue
+ * ================================================================= */
+void PlantAi_SetDemoAdjustment(int16_t leafOffsetCentiC, int16_t soilOffsetPermille, bool forceSoilSensorError) {
+    s_demoLeafOffsetCentiC = leafOffsetCentiC;
+    s_demoSoilOffsetPermille = soilOffsetPermille;
+    s_demoForceSoilError = forceSoilSensorError;
 }

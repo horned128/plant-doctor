@@ -171,12 +171,22 @@ static void test_diagnosis_command(void) {
     Console_Init(&s_testServices);
     s_mockDiagnosisValid = true;
     s_mockStress = 50U;
-    s_mockStatus = 1U; /* HEAT_STRESS */
+    s_mockStatus = 2U; /* PLANT_STATUS_HEAT_STRESS */
     s_mockSoilTrend = "DRYING";
 
     ok = Console_ExecuteCommand("Q", resp, sizeof(resp));
     TEST_ASSERT_TRUE(ok);
     TEST_ASSERT_TRUE(strstr(resp, "OK stress=50 status=HEAT_STRESS soil=DRYING") != NULL);
+
+    s_mockStatus = 1U; /* PLANT_STATUS_DRY_STRESS */
+    ok = Console_ExecuteCommand("Q", resp, sizeof(resp));
+    TEST_ASSERT_TRUE(ok);
+    TEST_ASSERT_TRUE(strstr(resp, "status=DRY_STRESS") != NULL);
+
+    s_mockStatus = 8U; /* PLANT_STATUS_WARNING */
+    ok = Console_ExecuteCommand("Q", resp, sizeof(resp));
+    TEST_ASSERT_TRUE(ok);
+    TEST_ASSERT_TRUE(strstr(resp, "status=WARNING") != NULL);
 }
 
 static void test_time_commands(void) {

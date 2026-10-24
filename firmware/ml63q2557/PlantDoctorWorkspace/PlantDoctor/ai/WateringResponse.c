@@ -76,6 +76,14 @@ void WateringResponse_Update(WATERING_RESPONSE_STATE *state,
         return;
     }
 
+    /* 給水失敗は一定時間で解除する。解除しないと診断が給水失敗のまま固定され、自律給水が再開できない */
+    if (state->status == WATERING_RESPONSE_FAILED) {
+        if ((config->failedHoldTicks > 0U) && ((input->currentTick - state->startTick) >= config->failedHoldTicks)) {
+            state->status = WATERING_RESPONSE_IDLE;
+        }
+        return;
+    }
+
     if (state->status != WATERING_RESPONSE_MEASURING) {
         return;
     }

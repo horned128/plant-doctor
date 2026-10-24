@@ -1,221 +1,207 @@
 # 第5章 システム統合・通信テレメトリと生体コックピット
 
-第1章から第4章までで、ROHM ML63Q2557 マイコン内部で完結する生体センシング、植物ストレス診断、そしてオンデバイス学習の理論と実装を学んできました。
+第1章から第4章までで、ROHM ML63Q2557 マイコンの内部で動くセンシング、ルール診断・ストレス算出、Solist-AI による異常度判定と7つの学習関門について解説しました。
 
-しかし、植物と人間が真の意味で対話し、遠隔から生育環境を見守るためには、マイコンが捉えた高精度な生体情報を安全・確実に外部へと中継し、直感的なユーザー体験（UX）へと昇華させる「システム統合」が重要な役割を担います。
-
-本章では、エッジマイコンからクラウドレスでブラウザまでを繋ぐ **I2Cバイナリテレメトリプロトコル（v2）**、ESP32-S3 による **ATOMS3 Lite 通信ゲートウェイ**、現地の物理 **LCD 16x2 / スイッチUI**、そして最新の Web 生体ダッシュボード **「plant-medical (Biological Cockpit)」** の全貌を解説します。
+Plant Doctor はマイコン基板1枚でも16×2 キャラクタ LCD とスイッチ（SW1〜SW4）を使ってその場で状態確認と水やりができますが、さらに **ATOMS3 Lite（ESP32-S3）ゲートウェイ** と **Web ダッシュボード「plant-medical」**、および **UART コンソール** をつなぐことで、8次元特徴量や再構成誤差・異常度の推移をリアルタイムに観察したり、遠隔から手動給水を行ったりできます。本章では、これらを結ぶ通信プロトコルと UI の実装を詳しく解説します。
 
 ---
 
-## 5.1 3段ハイブリッドシステムの全体協調とデータフロー
+## 5.1 3層の連携と手動給水経路の統一
 
-Plant Doctor は、堅牢な物理保護を担うエッジから、リッチな時系列解析を提供するWebフロントエンドまで、以下のデータパイプラインで有機的に結合されています。
+センサーの読み取りからブラウザの表示、そして手動給水の指示が戻るまでの流れは次のとおりです。
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant SENS as センサ群 & ポンプ
-    participant ML as ML63Q2557 (AI Core)
-    participant S3 as ATOMS3 Lite (Gateway)
-    participant WEB as plant-medical (Browser)
+    participant SENS as センサー群 & ポンプ
+    participant ML as ML63Q2557 (PlantDoctor)
+    participant S3 as ATOMS3 Lite (ESP32-S3)
+    participant WEB as plant-medical (ブラウザ)
 
-    Note over ML: 10ms 制御Tick / 1.0s サンプリング
-    SENS->>ML: アナログ電圧 / I2C センサ値
-    Note over ML: 特徴抽出・ストレス診断・RLS逐次学習
-    
+    Note over ML: 10ms Tick / 1.0s サンプリング
+    SENS->>ML: 葉温・気温・湿度・照度生値・土壌水分・液面
+    Note over ML: 特徴量抽出・ルール診断・ストレス算出<br/>Solist-AI 推論・異常度判定・学習
+
     rect rgb(240, 248, 255)
-        Note over ML,S3: 500ms 周期 I2C バイナリテレメトリ (0x42)
-        S3->>ML: I2C Read リクエスト (アドレス 0x42)
-        ML-->>S3: ebml_i2c_telemetry_pkt_t (40バイト, v2)
-        Note over S3: パケット検証 (Magic 0x5044, チェックサム)
+        Note over ML,S3: 500ms 周期 I2C テレメトリ送信 (アドレス 0x42)
+        ML->>S3: I2C Write: ebml_i2c_telemetry_pkt_t (40バイト, v2)
+        ML->>S3: I2C Read: ebml_i2c_cmd_pkt_t (コマンド確認)
     end
 
     rect rgb(255, 250, 240)
-        Note over S3,WEB: 1.0s 周期 WebSocket JSON ストリーミング (/ws)
-        S3->>WEB: JSON Telemetry Message
-        Note over WEB: 状態描画・生体アニメーション・IndexedDB 永続保存
+        Note over S3,WEB: 1.0s 周期 WebSocket 配信 (/ws)
+        S3->>WEB: JSON テレメトリ配信
+        Note over WEB: 画面更新・IndexedDB 保存
     end
 
-    opt ユーザーによる手動給水 / 時刻同期
-        WEB->>S3: WebSocket コマンド送信
-        S3->>ML: I2C Write コマンドパケット (給水 / 時刻設定)
-        ML->>SENS: ポンプFET通電 (最大2.0秒)
+    opt 手動給水（SW4 / コンソール W / ダッシュボード）
+        WEB->>S3: WebSocket 給水リクエスト
+        S3-->>ML: I2C Read 応答で cmd.command = 1 を返す
+        Note over ML: AppStateMachine_RequestManualWatering()<br/>給水前の土壌水分・葉気温差を記録し<br/>AI を1時間半休止してポンプ起動 (最大10秒)
+        ML->>SENS: ポンプ駆動 (OUT0 ON)
     end
 ```
 
-マイコン（ML63Q2557）はリアルタイム制御とAI演算に専念し、重いTCP/IPプロトコルスタックやWi-Fi暗号化処理はゲートウェイ（ESP32-S3）にオフロードします。これにより、ネットワークの輻滞や切断が起きても、植物の生命維持制御は 1 ミリ秒の遅延もなく継続されます。
+### 手動給水経路の統一（`AppStateMachine_RequestManualWatering`）
+
+Plant Doctor には、人が手動でポンプを動かす方法が3つあります。
+1. 基板上の **SW4** を押す
+2. USB シリアル（UART コンソール）から **`W` コマンド** を送る
+3. Web ダッシュボードの給水ボタンを押し、**ATOMS3 Lite 経由の I2C コマンド（`cmd.command == 1U`）** を受け取る
+
+以前は、SW4 と自動給水ではポンプを動かす前に給水前の土壌水分と葉気温差を `PlantAi_NotifyWatering` へ記録していた一方、コンソールの `W` と ATOMS3 Lite からの給水指示は `PumpControl_RequestManualWatering` を直接呼んでいたため、給水前の値が記録されず、給水後の効果判定や AI の1時間半休止が働かない不整合がありました。
+
+現在のファームウェアでは、コンソールと I2C テレメトリからの給水要求もすべて **`AppStateMachine_RequestManualWatering`（`app/AppStateMachine.c`）** に集約しています。
+
+```c
+/* app/AppStateMachine.c: コンソール・ダッシュボードからの手動給水経路 */
+uint8_t AppStateMachine_RequestManualWatering(void) {
+    uint8_t res;
+
+    if (s_state != APP_STATE_MONITOR) {
+        return 3U;
+    }
+    res = PumpControl_RequestManualWatering();
+    if (res == 0U) {
+        AppStateMachine_NotifyWatering(false); /* 給水前の土壌水分・ΔTをAIへ通知し、1時間半休止を設定 */
+        (void)PlantLog_RecordEvent(PLANT_LOG_EVENT_MANUAL_WATER_ON, 0U);
+    }
+    return res;
+}
+```
+
+これにより、どの経路から給水しても、`MONITOR` 状態でのみ安全にポンプが動き、給水前の値にもとづく3分後・5分後の自己診断と、給水後1時間半の AI 休止が同じように働きます。
 
 ---
 
-## 5.2 I2Cバイナリテレメトリプロトコル（v2）の詳細仕様
+## 5.2 I2C バイナリテレメトリ（v2、40バイト）の仕様
 
-ML63Q2557 と ATOMS3 Lite の間は、基板間通信として最も堅牢かつ配線数の少ない **I2C バス（スレーブアドレス: `0x42`）** で接続されています。
-
-テキスト形式（JSON等）ではなく、構造体アライメントを 1 バイト単位でパッキングした高効率なバイナリパケット **`ebml_i2c_telemetry_pkt_t`** を採用しています。
+ML63Q2557（`sensors/EbmlI2cTelemetry.c`）は 500 ms（50 ticks）ごとに、I2C スレーブとして動作する ATOMS3 Lite（7ビットアドレス `0x42`）へ 40 バイト固定長のバイナリパケット `ebml_i2c_telemetry_pkt_t` を送信します。ATOMS3 Lite がつながっていない場合は NACK で即座に復帰し、メインループを止めません。
 
 ```c
-/* inc/PlantDoctorI2cProto.h: I2C テレメトリパケット定義 (v2) */
+/* inc/PlantDoctorI2cProto.h: I2C テレメトリパケット定義 (v2, 40バイト) */
 #define EBML_I2C_SLAVE_ADDR        0x42
 #define EBML_I2C_PKT_MAGIC         0x5044   /* 'P', 'D' */
 #define EBML_I2C_PKT_VERSION       2
 
 #pragma pack(push, 1)
 typedef struct {
-    uint16_t magic;                     /* 0x5044 (固定マジックナンバー) */
-    uint8_t  version;                   /* プロトコルバージョン (2) */
-    uint8_t  length;                    /* パケット長 (40 バイト) */
-    uint32_t sampleSequence;            /* サンプル累積シーケンス番号 */
-    uint16_t soilMoistureRaw;           /* 土壌水分 ADC 生値 (0-4095) */
-    int16_t  leafTemperatureCentiC;     /* 葉面温度 [1/100 ℃] */
-    int16_t  airTemperatureCentiC;      /* 環境気温 [1/100 ℃] */
-    uint16_t relativeHumidityCentiPercent; /* 相対湿度 [1/100 %] */
-    uint16_t illuminanceRaw;            /* 照度 [Lux] */
-    uint8_t  tankLiquidDetected;        /* 給水タンク残水 (1: あり, 0: 空) */
-    uint8_t  pumpOn;                    /* 給水ポンプ動作状態 (1: ON, 0: OFF) */
-    uint8_t  stressScore;               /* 総合ストレススコア (0-100) */
-    uint8_t  statusCode;                /* 診断ステータスコード (0: HEALTHY 等) */
-    uint8_t  soilTrendCode;             /* 土壌トレンドコード (1: STABLE 等) */
-    
-    /* Solist-AI™ オンデバイス学習特化メトリクス */
-    uint16_t aiTrainCount;              /* 累積学習ステップ数 */
-    uint16_t aiLossPpm;                 /* 最新再構成損失 (0〜10000 PPM) */
-    uint8_t  aiPhase;                   /* 学習フェーズ (0:Profiling, 1:Stabilizing, 2:Monitoring) */
-    uint8_t  aiAnomalyScore;            /* 異常度スコア (0-100) */
-    int16_t  leafTempRatePerHour;       /* 葉温変化率 [1/100 ℃/h] */
-    int16_t  soilMoistureRatePerHour;   /* 土壌水分変化率 [‰/h] */
-
-    uint16_t checksum;                  /* 16-bit 加算チェックサム */
+    uint16_t magic;                         /* 0x5044 */
+    uint8_t  version;                       /* 2 */
+    uint8_t  length;                        /* 40 バイト */
+    uint32_t sampleSequence;                /* サンプル番号 */
+    uint16_t soilMoistureRaw;               /* 土壌水分生値 (0〜4095) */
+    int16_t  leafTemperatureCentiC;         /* 葉面温度 [1/100 ℃] */
+    int16_t  airTemperatureCentiC;          /* 気温 [1/100 ℃] */
+    uint16_t relativeHumidityCentiPercent;  /* 相対湿度 [1/100 %] */
+    uint16_t illuminanceRaw;                /* 照度センサー生値 (※ルクスではなく生値。換算は ×0.0576 lx) */
+    uint8_t  tankLiquidDetected;            /* タンク残水 (1:あり, 0:空) */
+    uint8_t  pumpOn;                        /* ポンプ状態 (1:ON, 0:OFF) */
+    uint8_t  stressScore;                   /* ストレススコア (0〜100) */
+    uint8_t  statusCode;                    /* 診断ステータス (PLANT_STATUS) */
+    uint8_t  soilTrendCode;                 /* 土壌傾向 (SOIL_TREND) */
+    uint16_t aiTrainCount;                  /* Solist-AI 累積学習回数 */
+    uint16_t aiLossPpm;                     /* 最新再構成誤差 [ppm] (0〜10000) */
+    uint8_t  aiPhase;                       /* 学習フェーズ (0:Profiling, 1:Stabilizing, 2:Monitoring) */
+    uint8_t  aiAnomalyScore;                /* 異常度 (0〜100、ルール異常時は 85) */
+    int16_t  leafTempRatePerHour;           /* 葉温変化速度 [1/100 ℃/h] */
+    int16_t  soilMoistureRatePerHour;       /* 土壌水分変化速度 [‰/h] */
+    uint16_t checksum;                      /* 先頭38バイトの16-bit加算チェックサム */
 } ebml_i2c_telemetry_pkt_t;
 #pragma pack(pop)
 ```
 
-### パケット完全性の検証（16-bit 加算チェックサム）
-ノイズの多い現場環境でのデータ化けを防ぐため、パケットの末尾 2 バイトには、先頭からチェックサム直前までの全バイトを加算した 16-bit チェックサムが付与されます。
+### 1. 照度フィールド `illuminanceRaw` はセンサーの生値
 
-$$\text{checksum} = \sum_{i=0}^{L-3} \text{packet}[i] \pmod{2^{16}}$$
+第1章でも触れたとおり、パケット内の `illuminanceRaw` にはルクス（lx）換算後の値ではなく、**照度センサー（SEN0228 / VEML7700）の 16 ビット生値**が入っています。ファームウェア内の換算式では **生値 1 が約 $0.0576\text{ lx}$**（`illuminanceCentiLux = (raw * 576 + 50) / 100`）であり、実機ログの照明点灯中の値（約 `1350`）は約 $78\text{ lx}$ にあたります。Web ダッシュボードやログの JSON では、この生値がそのまま表示・記録されます。
 
-受信側の ESP32-S3 は、マジックナンバー（`0x5044`）、バージョン（`2`）、パケット長（`40`）、およびチェックサムの全条件が一致した場合のみ有効な生体データとして受理します。
+### 2. ルール診断が異常のときは異常度 `85` を送る理由
+
+パケットの `aiAnomalyScore` には、通常は `AiAnomaly.c` が算出した Solist-AI の異常度（$0 \sim 100$）が入ります。しかし、Web ダッシュボード（`SolistAiStatusCard.tsx`）は `aiAnomalyScore` が 30 未満のときに「健全状態を維持」と表示する作りになっています。
+
+一方、Solist-AI の異常度は、起動後の準備中や給水後1時間半の休止中、あるいは誤差が平常平均以下のときには `0` になります。そのため、もし `PlantAi_GetAiAnomalyScore()` の値をそのまま送ってしまうと、たとえば起動直後に土が乾いていてルール診断が `DRY_STRESS`（乾燥ストレス）や `SENSOR_ERROR`（センサー異常）を出しているのに、ダッシュボードの AI カードには「異常度 0・健全状態を維持」と表示されてしまいます。
+
+これを防ぐため、`EbmlI2cTelemetry.c` では**診断ステータスが `HEALTHY`・`WARNING`・`LEARNING` 以外の異常状態にある間は、従来どおり異常度として `85` を上書き送信**します。
+
+```c
+/* sensors/EbmlI2cTelemetry.c: ダッシュボード向けの異常度送信 */
+/* ダッシュボードは30未満を「健全」と表示する。ルールが異常と判定している間は、従来どおり85を送る */
+pkt.aiAnomalyScore = PlantAi_GetAiAnomalyScore();
+if ((pkt.statusCode != (uint8_t)PLANT_STATUS_HEALTHY) && (pkt.statusCode != (uint8_t)PLANT_STATUS_WARNING) &&
+    (pkt.statusCode != (uint8_t)PLANT_STATUS_LEARNING)) {
+    pkt.aiAnomalyScore = 85U;
+}
+```
+
+これにより、ルールで明らかな異常（乾燥・熱・給水失敗・センサー異常など）が出ているときにはダッシュボードも確実に異常表示になり、ルール上は健康（`HEALTHY`）または AI 早期警告（`WARNING`）のときには Solist-AI が算出した 0〜100 の異常度がそのまま表示されます。
 
 ---
 
-## 5.3 ATOMS3 Lite ゲートウェイの機能と役割
+## 5.3 ローカル 16×2 LCD 表示・スイッチ操作・デモモード
 
-ATOMS3 Lite（ESP32-S3FN8 搭載）は、物理的な植物生体信号をサイバー空間へと橋渡しする「エッジ通信ゲートウェイ」として機能します。
+DT-EBML63Q2557 ボード上の 16文字×2行 LCD（`ui/LcdUi.c`）と4つのスイッチ（SW1〜SW4）だけでも、すべての状態確認と手動操作が行えます。すべての表示文字列は 16 文字以内に収まるよう設計されています。
 
-```mermaid
-graph LR
-    subgraph ATOM["ATOMS3 Lite 内部ファームウェア"]
-        I2C["I2C Slave Client<br/>(500ms 周期ポーリング)"]
-        WIFI["Wi-Fi 接続マネージャ<br/>(AP/STA 自動フォールバック)"]
-        MDNS["mDNS レスポンダ<br/>(plant-doctor.local)"]
-        WS["WebSocket Server (/ws)<br/>JSON シリアライザ"]
-        LED["NeoPixel RGB LED<br/>(通信状態・警告カラー表示)"]
-    end
+### 1. 3つの表示ページと5秒自動巡回
 
-    I2C --> WS
-    WIFI --> WS
-    WIFI --> MDNS
-    I2C --> LED
+通常監視中（`MONITOR`）は5秒ごとにページ 0 → 1 → 2 が自動で切り替わり、表示中のページも1秒ごとに最新値で書き換えられます。SW1・SW2・SW3 を短押しすると、見たいページへ即座に切り替えられます。
+
+| ページ | スイッチ | 1行目の表示例 | 2行目の表示例 | 内容 |
+|---|---|---|---|---|
+| **ページ 0** | SW1 | `STRESS: 18/100 *` | `HEALTHY` / `WARNING` | ストレスバロメータ（0〜100、デモ中は末尾に `*`）と診断ステータス（異常センサーがある場合は `SOIL SENS ERR` 等） |
+| **ページ 1** | SW2 | `LEAF-AIR:+0.5C` | `SOIL:STABLE` | 葉気温差 $\Delta T$（$0.1^\circ\text{C}$ 単位）と土壌傾向（`STABLE` / `DRY` / `WET` / `DEGRADE`） |
+| **ページ 2** | SW3 | `LUX:77.76` | `TANK:WET` | ルクス換算照度と給水タンク液面（`WET` / `EMPTY`）。デモモード中はデモ番号を表示 |
+
+### 2. SW4 による手動給水と LCD メッセージ
+
+- **給水停止中に SW4 短押し**: タンクに水がありクールダウン中でなければポンプを起動し、LCD 2行目に **`WATERING`** と表示します（ポンプは最大 **10.0秒＝約20 mL** で自動停止し、停止後 **3.0秒** は再起動しません。以前の `WATERING 2.0s` という誤表示は `WATERING` に修正しました）。
+- **ポンプ動作中に SW4 短押し**: その場でポンプを緊急停止し、`PUMP STOPPED` と表示します。
+- **インターロック作動時**: タンクが空なら `TANK EMPTY!`、停止後3秒以内なら `PUMP COOLDOWN` を 1.5 秒間表示して操作をブロックします。
+
+### 3. デモモード（SW1 3秒長押し / コンソール `M=`）
+
+展示や発表で短時間に各状態の動きを見せるため、**SW1 を3秒以上長押し**（または UART コンソールで `M=1`〜`M=5` を入力）するとデモモードに入ります。デモモード中に SW2 または SW3 を押すと、DEMO1（通常）→ DEMO2（葉温 $+2.00^\circ\text{C}$・照度2倍）→ DEMO3（土壌水分 $-400\text{‰}$）→ DEMO4（タンク空）→ DEMO5（土壌センサー異常）を順に切り替えられます。
+
+```c
+/* app/AppStateMachine.c: デモのずらし値を PlantAi の診断・ストレス入力にも渡す */
+DemoMode_GetInput(&s_demoState, &demoIn);
+PlantAi_SetDemoAdjustment(demoIn.leafTemperatureOffsetCentiC,
+                          demoIn.soilMoistureOffsetPermille,
+                          demoIn.forceSoilSensorError);
 ```
 
-1. **ゼロコンフィグアクセス（mDNS）**:
-   Wi-Fi ネットワークに参加後、`plant-doctor.local` というドメイン名を自律ブロードキャストします。ユーザーはいちいちルーターの管理画面を開いてIPアドレスを調べる必要がなく、ブラウザに `http://plant-doctor.local` と入力するだけで即座に接続できます。
-2. **WebSocket リアルタイム配信**:
-   ポート `80`（HTTP）および `/ws`（WebSocket）サーバーを内蔵しています。ブラウザが開かれると、1秒に1回のペースでバイナリテレメトリを整形した JSON メッセージを全クライアントへプッシュ配信します。
-3. **RGB LED（NeoPixel）によるステータス可視化**:
-   基板中央のフルカラーLEDにより、ゲートウェイ自体の稼働状態を直感的に把握できます。
-   - 🟢 **緑点滅**: 正常稼働中・ML63Q2557 との通信確立
-   - 🔵 **青点滅**: Wi-Fi 接続試行中
-   - 🔴 **赤点灯**: I2C 通信エラーまたはセンサ断線警告
+デモモードのオフセットは自律給水ポリシー（`WateringPolicy`）だけでなく、`PlantAi` のルール診断とストレス算出にも渡されます。そのため、土が実際に湿っている状態でも **DEMO3 に切り替えれば診断が `DRY_STRESS` になり、実際にポンプが動いて自動給水の動作を実演できます**。一方で第4章で説明したとおり、デモのオフセットは Solist-AI の入力・学習には入らないため、デモを行ったあと通常モード（`M=0` または SW1 長押し）に戻せば、学習済みのモデルを汚さずにそのまま監視を続けられます。
 
 ---
 
-## 5.4 ローカル LCD 16x2 とハードウェアUI操作体系
+## 5.4 UART コンソール（115200 bps）
 
-Plant Doctor のマイコン基板（DT-EBML63Q2557）には、PCやスマートフォンが手元にない現場でも即座に状態が確認できるよう、**16文字 × 2行のキャラクタLCD** と **4つのタクトスイッチ（SW1〜SW4）** が搭載されています。
+PC と USB シリアルで接続すると、115200 bps のテキストコマンド（`console/Console.c`）で状態の問い合わせや操作が行えます。
 
-```
-+──────────────────────────+
-|  STRESS:  2 (^_^)        | <- 1行目: ストレス値と顔文字
-|  HEALTHY                 | <- 2行目: 診断ステータス
-+──────────────────────────+
-```
-
-### 1. SW1〜SW3 による表示ページ手動切り替え
-画面は3つのページで構成され、スイッチ操作によっていつでも切り替えられます。
-
-```mermaid
-graph TD
-    SW1["SW1 短押し"] --> P0["ページ 0: 生体診断・感情顔文字<br/>Line1: STRESS: xx (^_^)<br/>Line2: HEALTHY / DRY STRESS 等"]
-    SW2["SW2 短押し"] --> P1["ページ 1: 生体相関・土壌トレンド<br/>Line1: LEAF-AIR: -0.50C (ΔT)<br/>Line2: SOIL: STABLE / DRY 等"]
-    SW3["SW3 短押し"] --> P2["ページ 2: 環境・タンク残量<br/>Line1: AIR: +24.5C H: 55%<br/>Line2: LUX: 450 TK: WET"]
-```
-
-### 2. ストレス感情顔文字（Emoticon）による直感表示
-LCD 1行目の右端には、ストレススコアに応じた5文字の感情表現アスキーアートがリアルタイム描画されます。
-
-| ストレススコア | 表示顔文字 | 植物の気持ち | 意味 |
-|---|:---:|---|---|
-| **0 〜 25** | `(^_^)` | 「快適！すくすく育っています」 | 蒸散快調・完全健全 |
-| **26 〜 50** | `(-_-)` | 「ちょっと喉が渇いたかも…」 | 軽度ストレス・要観察 |
-| **51 〜 75** | `(>_<)` | 「苦しい！水をください！」 | 気孔閉鎖・ストレス警戒 |
-| **76 〜 100**| `(X_X)` | 「もう限界…倒れそうです！」 | 深刻な水切れ・熱過熱 |
-
-### 3. SW4 による手動給水トグルと安全インターロック
-- **短押し（給水停止時）**: ポンプが起動し、定量（約20ml / 2.0秒）の給水を開始します（`WATERING 2.0s` 表示）。
-- **短押し（給水動作中）**: 任意のタイミングで即座に給水を強制緊急停止できます（`PUMP STOPPED` 表示）。
-- **フェイルセーフ通知**: タンクに水がない場合は `TANK EMPTY!`、前回の給水から時間が経過していない場合は `PUMP COOLDOWN` と表示され、誤作動を完全に防止します。
-
-### 4. デモモード機能（SW1 長押し）
-展示会やプレゼンテーションにおいて、意図的に乾燥や熱ストレス状態を疑似再現できるよう、**SW1 を 3.0秒以上長押し** することで「デモモード」へ移行します。デモモード中は画面上にアスタリスク `*` が点灯し、安全に各機能のデモンストレーションが可能です。
+| コマンド | 動作 |
+|---|---|
+| `P` | 保存されている FRAM ログの件数やヘッダー情報を表示 |
+| `D` | 保存されているログを CSV 形式でダンプ出力（末尾の余分な空行なし） |
+| `S` | 現在の時刻、センサー値、ストレススコア、診断ステータスを1行で表示 |
+| `W` | 手動給水を要求（`AppStateMachine_RequestManualWatering` 経由で給水前値を記録して起動） |
+| `C=dry,wet` | 土壌水分センサーの乾燥・湿潤校正値を設定（整数チェックおよび `wet >= dry + 200` を検証） |
+| `T=epoch` | 現在時刻（Unix 秒、または `YYYY-MM-DDTHH:MM:SS`、2099年まで対応）を設定 |
+| `M=0`〜`5` | デモモードの解除（`0`）および DEMO1〜DEMO5（`1`〜`5`）への直接切り替え |
+| `Q` | USB 接続時のダッシュボード連携用 JSON を1行出力（`status` 名は `PLANT_STATUS` の番号と一致） |
 
 ---
 
-## 5.5 plant-medical（Biological Cockpit）ダッシュボード
+## 5.5 ATOMS3 Lite と Web ダッシュボード「plant-medical」
 
-Webダッシュボード **「plant-medical」** は、植物を単なる測定対象ではなく「ひとつの生命（患者）」として捉える、診察室型コックピットUIです。
+ATOMS3 Lite（ESP32-S3）は I2C で受け取った 40 バイトのテレメトリをチェックサム検証のうえ JSON に変換し、Wi-Fi の WebSocket（`/ws`）で配信します。mDNS（`http://plant-doctor.local`）に対応しているため、同じネットワーク上の PC やスマートフォンから IP アドレスを調べずにアクセスできます。
 
-```mermaid
-flowchart TD
-    subgraph TAB1["① コックピット画面 (Cockpit)"]
-        T1["DigitalPlantTwin<br/>(ストレスに応じた植物のリアルタイム生体アニメーション)"]
-        T2["BioTelemetryPanel<br/>(葉面温度, 気温, ΔT, 湿度, 土壌, 照度の即時ゲージ)"]
-        T3["AiDiagnosisPanel<br/>(総合ストレスバロメータ & 多段階診断ステータス)"]
-        T4["RootZoneWatering<br/>(タンク残量モニタ & ワンクリック手動給水操作)"]
-    end
+ブラウザで動く **plant-medical** は、受け取った生体テレメトリをブラウザ内の **IndexedDB** に毎秒保存しながら、次の3つのビューで植物の状態を可視化します。
 
-    subgraph TAB2["② AI詳細研究室 (Solist-AI™ Research)"]
-        R1["SolistAiStatusCard<br/>(累積学習回数, 学習フェーズ, 異常度スコア)"]
-        R2["SolistAiLossChart<br/>(再構成損失 MSE の時系列推移 & 収束曲線)"]
-        R3["SolistAiFeatureRadar<br/>(8次元正規化生体特徴レーダーチャート)"]
-    end
-
-    subgraph TAB3["③ 履歴分析室 (Analytics & History)"]
-        A1["時系列推移グラフ (1h / 6h / 24h / All 期間プリセット)"]
-        A2["給水実績ログ (給水日時・給水秒数・成否判定の履歴一覧)"]
-        A3["データエクスポート (Apache Parquet / CSV 形式ダウンロード)"]
-    end
-```
-
-### 1. デジタルプラントツイン（Digital Plant Twin）
-画面中央には、植物のリアルタイムな生理状態を反映するインタラクティブな植物モデルが配置されます。
-- ストレススコアが低い健全時は、葉がいきいきと緑に輝き、蒸散を表す柔らかなアニメーションが流れます。
-- ストレスが上昇すると、葉が徐々に黄色から茶色へと変色し、萎れて垂れ下がるアニメーションへとシームレスに変化します。
-
-### 2. 8次元生体特徴レーダーチャート（SolistAiFeatureRadar）
-正規化された 8つの特徴量（土壌、葉温、気温、$\Delta T$、湿度、照度、葉温変化率、土壌変化率）を、正八角形のレーダーチャートとして描画します。
-- 健全時はバランスの取れた均整な形状を保ちますが、異常が発生すると特定の特徴軸が大きく突出し、どのセンサが相関崩れの原因になっているのかが一目で直感できます。
-
-### 3. ブラウザ内蔵 IndexedDB による完全ローカル永続保存
-一般的なWebシステムとは異なり、クラウドデータベースを必要としません。
-- ブラウザ内部の高速ストレージ **IndexedDB（PlantMedicalDB）** に、受信したテレメトリを秒単位で直接保存します。
-- 過去の任意の時刻のタイムラインをスクロール（スクラバー操作）することで、数時間前の植物の体調変化を正確に再生・追体験できます。
-- 蓄積されたデータは、分析用の標準形式である **Apache Parquet** や **CSV** としてワンクリックでダウンロード可能です。
+1. **コックピット画面（Cockpit）**: ストレスバロメータ（0〜100）、現在の診断ステータス（`HEALTHY` / `WARNING` / `DRY_STRESS` など）、葉温・気温・$\Delta T$・湿度・土壌水分・照度（生値）、および手動給水ボタンを表示します。
+2. **Solist-AI 研究室（Solist-AI™ Research）**: 累積学習回数（`aiTrainCount`）、学習フェーズ（Profiling / Stabilizing / Monitoring）、再構成誤差（`aiLossPpm`）の時系列グラフ、異常度（`aiAnomalyScore`、0〜100）、および正規化された8次元特徴量のレーダーチャートを表示します。
+3. **履歴・エクスポート（History & Export）**: IndexedDB に蓄えた時系列データを振り返り、**Apache Parquet** または **CSV** 形式でダウンロードして手元の環境で詳しく分析できます。
 
 ---
 
-## 📖 ナビゲーション
+## ナビゲーション
 
-**[← 第4章 オンデバイス逐次学習（ODL）の数学と実装アーキテクチャ](04_on_device_learning_mechanism.md)** ｜ [目次 (README)](README.md)
-
+**[← 第4章 オンデバイス逐次学習（ODL）の数学と7つの関門](04_on_device_learning_mechanism.md)** ｜ [目次 (README)](README.md)

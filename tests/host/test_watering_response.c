@@ -17,7 +17,8 @@ static WATERING_RESPONSE_CONFIG s_config = {
     .minSoilRecoveryPermille = 50,
     .minTempDropCentic = 30,
     .degradeRequiredCycles = 3U,
-    .degradeMinGainPermille = 80
+    .degradeMinGainPermille = 80,
+    .failedHoldTicks = 180000UL
 };
 
 static void test_normal_watering_success(void) {
@@ -294,8 +295,45 @@ static void test_unsynchronized_time_ticks_only(void) {
     TEST_ASSERT_FALSE(WateringResponse_DidNotCoolLeaf(&state));
 }
 
+/* 給水失敗は一定時間で解除され、自律給水を再開できる */
+static void test_failed_clears_after_hold(void) {
+    WATERING_RESPONSE_STATE state;
+    PUMP_WATERING_EVENT event = {
+        .startTimeSeconds = 1000U,
+        .onDurationTicks = 1000U,
+        .soilMoistureRawBefore = 1000U,
+        .soilMoisturePermilleBefore = 250,
+        .leafAirDeltaBefore = 50,
+        .stopReason = (uint8_t)PUMP_STOP_REASON_MAX_ON_TIME,
+        .tankLiquidAtStart = true,
+        .automatic = true
+    };
+    WATERING_RESPONSE_INPUT input = {
+        .soilMoisturePermille = 260,
+        .leafAirDeltaCentic = 50,
+        .soilMoistureValid = true,
+        .leafAirDeltaValid = true,
+        .nowSeconds = 1000U + 180U,
+        .currentTick = 100000UL + 18000UL
+    };
+
+    WateringResponse_Reset(&state);
+    WateringResponse_NotifyWatering(&state, &event, 100000UL);
+    WateringResponse_Update(&state, &input, &s_config);
+    TEST_ASSERT_EQUAL_INT(WATERING_RESPONSE_FAILED, WateringResponse_GetResult(&state));
+
+    input.currentTick = 100000UL + 180000UL - 1UL;
+    WateringResponse_Update(&state, &input, &s_config);
+    TEST_ASSERT_EQUAL_INT(WATERING_RESPONSE_FAILED, WateringResponse_GetResult(&state));
+
+    input.currentTick = 100000UL + 180000UL;
+    WateringResponse_Update(&state, &input, &s_config);
+    TEST_ASSERT_EQUAL_INT(WATERING_RESPONSE_IDLE, WateringResponse_GetResult(&state));
+}
+
 int main(void) {
     test_normal_watering_success();
+    test_failed_clears_after_hold();
     test_soil_recovered_but_leaf_not_cooling();
     test_watering_failed_no_moisture_recovery();
     test_boundary_exact_minimum_recovery();

@@ -4,10 +4,10 @@
 
 この文書は、DT-EBML63Q2557（ROHM ML63Q2557、Arm Cortex-M0+）で動作する
 Plant Doctorファームウェアの設計書です。現在のソース構造、実行モデル、センサー、
-LCD表示、エラー処理、将来拡張の境界を定義します。
+植物診断・オンデバイス学習（Solist-AI）、給水制御、LCD表示、エラー処理の境界を定義します。
 
-VSCodeでの開発・運用手順は[VS Code開発環境](../../VSCODE_SETUP.md)を、配線は
-[ピン接続](../../PIN_CONNECTIONS.md)を参照してください。
+VSCodeでの開発・運用手順は[VS Code開発環境](VSCODE_SETUP.md)を、配線は
+[ピン接続](../../hardware/PIN_CONNECTIONS.md)を参照してください。
 
 ## 構成と責務
 
@@ -15,29 +15,38 @@ VSCodeでの開発・運用手順は[VS Code開発環境](../../VSCODE_SETUP.md)
 src/main.c
   -> app/App
        -> app/AppStateMachine
-       -> board/Board
-       -> sensors/SensorManager
-       -> ai/PlantAi                 （将来のAI境界）
-       -> actuator/PumpControl       （将来の給水制御境界）
-       -> storage/PlantLog           （将来の記録境界）
+            -> app/WateringPolicy, app/DemoMode
+       -> board/Board, board/TimeKeeper, board/RtcRx4111
+       -> sensors/SensorManager, sensors/SoilCalibration, sensors/EbmlI2cTelemetry
+       -> ai/PlantAi
+            -> ai/PlantFeature
+            -> sensors/SensorPlausibility
+            -> ai/PlantDiagnosis
+            -> ai/PlantStress
+            -> ai/WateringResponse
+            -> ai/AiAnomaly
+       -> actuator/PumpControl
+       -> storage/PlantLog, storage/PlantLogQueue, storage/PlantLogRing
+       -> console/Console, console/ConsoleUart
 
 ui/LcdUi
   -> drivers/Lcd
        -> drivers/LcdI2cf0
 
-sensors/EnvironmentSensor, LeafTemperatureSensor
+sensors/EnvironmentSensor, LeafTemperatureSensor, EbmlI2cTelemetry
   -> sensors/I2cBus
 ```
 
 | 層 | 主なディレクトリ | 責務 |
 | --- | --- | --- |
 | 起動 | `src/`、`startup_ML63Q25x7.c`、`system_ML63Q25x7.c` | リセット後の初期化と`main`の起動。 |
-| アプリケーション | `app/` | スーパーループ、状態遷移、周期イベントの振り分け。 |
-| 基板制御 | `board/` | クロック、ウォッチドッグ、Timer0、電源自己保持、LED、スイッチを抽象化。 |
-| 表示 | `ui/`、`drivers/` | LCDの画面構成、LCDコマンド、I2CF0によるLCD転送。 |
-| センサー | `sensors/` | センサー取得、単位変換、妥当性判定、最新スナップショットの提供。 |
-| 給水制御 | `actuator/` | SSR（OUT0 / P66）による給水ポンプ制御、安全タイマ（2.0秒）、手動給水操作。 |
-| 将来拡張 | `ai/`、`storage/` | AI判定、ログの接続点。現時点では実装範囲を限定する。 |
+| アプリケーション | `app/` | スーパーループ、状態遷移、周期イベントの振り分け、自律給水ポリシー、デモモード。 |
+| 基板制御 | `board/` | クロック、ウォッチドッグ、Timer0、電源自己保持、LED、スイッチ、RTC（RX4111）を抽象化。 |
+| 表示・コンソール | `ui/`、`drivers/`、`console/` | LCDの画面構成、I2CF0によるLCD転送、UARTコンソール（`P`/`D`/`S`/`W`/`C=`/`T=`/`M=`/`Q`）。 |
+| センサー・通信 | `sensors/` | センサー取得、校正変換、妥当性判定、最新スナップショットの提供、ATOMS3 Lite向けI2Cテレメトリ送信（`0x42`）。 |
+| 植物診断・AI | `ai/` | 8次元特徴量抽出、ストレス算出（0〜100）、原因推定、給水応答自己診断、Solist-AIの学習制御と再構成誤差からの異常度判定（`AiAnomaly`）。 |
+| 給水制御 | `actuator/` | SSR（OUT0 / P66）による給水ポンプ制御、安全タイマ（最大10.0秒＝約20 mL）、クールダウン（3.0秒）、手動給水操作。 |
+| 記録 | `storage/` | FeRAMリングバッファと送信待機キューによる測定値・イベントの保存。 |
 | ベンダー共通部 | `firmware/ml63q2557/CommonFiles/` | I/Oドライバ、電源、タイマなど。アプリケーション固有コードから変更しない。 |
 
 アプリケーション層は`board/`、`sensors/`、`ui/`のAPIへ依存します。ML63Q2557の
@@ -165,14 +174,29 @@ LCDは16文字×2行です。文字列は`ui/LcdUi.c`で生成し、短い文字
 `ERROR`中はLED1とLED3が同じ位相、LED2が反対位相で250 msごとに交互点滅します。
 初期化エラーにより起動できない場合でも、LCDが未初期化であれば自動的に初期化を試行して上記のエラーメッセージをLCDに表示します。
 
-## 給水制御と将来拡張の境界
+## 植物診断・オンデバイス学習と給水制御
 
-`PumpControl`はCN5 OUT0（P66、Nchオープンドレイン出力）を介してDFR0457/外部12V給水ポンプを
-安全に制御します。1回の最大駆動時間（2.0秒）による自動停止、給水後クールダウン（3.0秒）、
-SW4押下による手動給水・停止トリガー、LCD表示フィードバック、エラー時緊急遮断を提供します。
+### 植物診断とオンデバイス学習（`ai/PlantAi`・`ai/AiAnomaly`）
 
-`PlantAi`はセンサー値から植物状態を判定する境界、`PlantLog`は時刻付き測定値とイベントを記録する
-境界です。将来機能はこれらのモジュールを拡張し、センサー取得、LCD、基板制御、給水制御の既存責務を
-直接混在させません。
+`PlantAi`は1秒ごとのセンサースナップショットから8次元の特徴量（`PlantFeature`）、センサー妥当性（`SensorPlausibility`）、給水応答自己診断（`WateringResponse`）、原因候補のルール診断（`PlantDiagnosis`）、ストレスバロメータ（`PlantStress`、重みは土壌35・熱35・日照15・湿度15）を更新した上で、ML63Q2557内蔵のSolist-AIアクセラレータ（`AI_PERI`、8-64-8自己符号化器）による推論と逐次学習を制御します。
 
-実装の優先順位と完了条件は[Plant Doctor 実行計画](../../IMPLEMENTATION_PLAN.md)を参照してください。
+`AiAnomaly`（`ai/AiAnomaly.c/.h`）は、Solist-AIが出力する再構成誤差（`lossPpm`、0〜9999 ppm）から、その株の健康時の誤差の平均とばらつき（平均絶対偏差）を指数移動平均（窓長 $2^{10}=1024$ サンプル、立ち上がりは単純平均）で学習します。現在の誤差が平均からばらつきの何倍上振れしたかを異常度 0〜100 に換算し（ばらつき下限 15 ppm、8倍で異常度100）、ヒステリシス付きの加減算カウンタによって「いつもと違う」状態を判定します。
+
+- **判定の開始時期**：変化速度（直近60分の履歴から算出）の履歴が15分（`PLANT_DOCTOR_AI_RATE_READY_MINUTES`）たまるまでは変化速度の入力を中間値（128）に固定し、基準の学習にも使いません。さらに学習回数100回以上かつ健康サンプル600件（約10分）が集まってから異常度の算出を始めるため、起動から判定開始まで約25分かかります。
+- **加減算カウンタによるWARNING判定**：異常度50以上（`onScore`）で開始カウンタを1増やし、60サンプル（約1分）に達すると「いつもと違う」と判定してルール上は`HEALTHY`でも診断ステータスを`PLANT_STATUS_WARNING`へ切り替えます。異常度30未満（`offScore`）で解除カウンタを1増やし、120サンプル（約2分）に達すると解除します。1秒ごとの揺れで条件から1回外れてもカウンタを0に戻さず1減らす方式とし、上限で頭打ちにすることで判定と解除の遅れを防ぎます。
+- **学習の関門（健康なモデルを汚さない保護）**：次の条件をすべて満たすときだけSolist-AIを学習させます。
+  1. ルール診断が`PLANT_STATUS_HEALTHY`であること。
+  2. 4系統すべてのセンサー妥当性が`SENSOR_HEALTH_OK`であること。
+  3. ストレススコアが30未満であること（立ち上げの学習100回未満に限り、ストレス50未満かつ土壌・熱の部分スコアがともに40未満なら許可）。
+  4. 給水応答の測定中（`WATERING_RESPONSE_MEASURING`）ではないこと。
+  5. **給水後の休止期間**ではないこと。給水すると土壌水分の変化速度（60分履歴）に給水の影響が残るため、給水後5400サンプル（約1時間半、`PLANT_DOCTOR_AI_POST_WATERING_HOLD_SAMPLES`）はAIの判定と学習を休止し、健康時の基準（平均・ばらつき）だけを残して判定状態を消去します（`AiAnomaly_ClearJudgement`）。
+  6. デモモードのオフセット補正（`PlantAi_SetDemoAdjustment`）が適用されていないこと。デモのずらし値はルール診断とストレス算出にだけ入れ、AIの入力・学習・給水応答には入れません。
+  7. **異常時の学習間引きと学び直し**（`AiAnomaly_AllowTraining`）：異常度が50以上または`isAnomaly`の間は、異常を「いつも」として覚えないよう学習を60サンプル（約1分）に1回へ絞ります。ただし、ルール上は健康なまま10800サンプル（約3時間、`PLANT_DOCTOR_AI_ANOMALY_RELEARN_AFTER_SAMPLES`）続いた場合は、照明の切り替えや置き場所の変更とみなして毎秒の学習を再開し、新しい「いつも」へ適応させます。また、異常の間は異常度の基準（平均・ばらつき）を更新しません。
+
+### 給水制御と記録・テレメトリの境界
+
+`PumpControl`はCN5 OUT0（P66、Nchオープンドレイン出力）を介して給水ポンプを制御します。1回の最大駆動時間は10.0秒（`PLANT_DOCTOR_PUMP_MAX_ON_TICKS = 1000`、約20 mL）で自動停止し、停止後3.0秒のクールダウンを設けます。SW4、UARTコンソールの`W`、ATOMS3 Lite経由のダッシュボード給水指示はいずれも`AppStateMachine_RequestManualWatering`を通じ、`MONITOR`状態でのみ給水前の土壌水分と葉気温差を`PlantAi_NotifyWatering`へ記録してからポンプを起動します。給水3分後に土壌水分が50‰以上増えない場合の`WATERING_FAILED`は、30分（`PLANT_DOCTOR_RESP_FAILED_HOLD_SECONDS = 1800`）で自動解除して自律給水を再開できるようにしています。
+
+`EbmlI2cTelemetry`は500 ms周期でATOMS3 Lite（I2Cアドレス`0x42`）へ40バイトのバイナリパケットを送信します。ダッシュボード側が異常度30未満を「健全」と表示するため、ルール診断が`HEALTHY`・`WARNING`・`LEARNING`以外の異常状態にある間はテレメトリの`aiAnomalyScore`として85を送信します。
+
+実装の優先順位と完了条件は[Plant Doctor 統合実行計画](../../PLAN.md)を参照してください。

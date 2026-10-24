@@ -29,6 +29,7 @@ typedef struct {
     int16_t minTempDropCentic;             /* 葉温回復判定最小低下量 [1/100 ℃] */
     uint8_t degradeRequiredCycles;         /* 劣化判定に必要な連続サイクル数 (既定3) */
     int16_t degradeMinGainPermille;        /* 保水性低下判定の増加量下限 [‰] */
+    uint32_t failedHoldTicks;              /* 給水失敗を保つ時間 [ticks]（0なら解除しない） */
 } WATERING_RESPONSE_CONFIG;
 
 typedef struct {

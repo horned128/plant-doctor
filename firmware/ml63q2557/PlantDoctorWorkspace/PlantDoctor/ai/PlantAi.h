@@ -28,6 +28,9 @@ void PlantAi_ClearWateringFailure(void);                    /* 給水失敗状�
 uint32_t PlantAi_GetSolistTrainCount(void);                 /* 累積オンデバイス学習ステップ数 */
 uint16_t PlantAi_GetSolistLossPpm(void);                    /* 最新再構成損失 (0.0001〜1.0000 を 1〜10000 で表現) */
 uint8_t PlantAi_GetSolistPhase(void);                       /* 学習フェーズ: 0:Profiling, 1:Stabilizing, 2:Monitoring */
+uint8_t PlantAi_GetAiAnomalyScore(void);                    /* Solist-AI の異常度（いつもからのずれ）0〜100 */
+bool PlantAi_IsAiAnomaly(void);                             /* Solist-AI が「いつもと違う」と判定しているか */
+void PlantAi_SetDemoAdjustment(int16_t leafOffsetCentiC, int16_t soilOffsetPermille, bool forceSoilSensorError); /* デモ用の診断オフセット */
 
 #endif /* PLANT_AI_H */
 

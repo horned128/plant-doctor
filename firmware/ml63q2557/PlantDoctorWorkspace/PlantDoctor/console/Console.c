@@ -9,6 +9,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include "PlantDoctorConfig.h"
+#include "PlantDoctorStatus.h"
 
 #define CONSOLE_RX_LINE_MAX         (PLANT_DOCTOR_CONSOLE_LINE_MAX)
 #define CONSOLE_TX_BUF_SIZE         (PLANT_DOCTOR_CONSOLE_TX_BUFFER_SIZE)
@@ -27,14 +28,19 @@ static bool s_dumpActive;
 static uint16_t s_dumpIndex;
 static uint16_t s_dumpTotal;
 
+/**< PLANT_STATUS の番号に対応する状態名（ATOMS3 Lite の表示名とそろえる） */
 static const char *s_statusNames[] = {
-    "HEALTHY",
-    "HEAT_STRESS",
-    "DRY_STRESS",
-    "LOW_LIGHT",
-    "ROOT_UPTAKE",
-    "SENSOR_FAULT",
-    "DEGRADED_SOIL"
+    [PLANT_STATUS_HEALTHY] = "HEALTHY",
+    [PLANT_STATUS_DRY_STRESS] = "DRY_STRESS",
+    [PLANT_STATUS_HEAT_STRESS] = "HEAT_STRESS",
+    [PLANT_STATUS_LOW_LIGHT] = "LOW_LIGHT",
+    [PLANT_STATUS_ROOT_UPTAKE] = "ROOT_UPTAKE",
+    [PLANT_STATUS_WATERING] = "WATERING",
+    [PLANT_STATUS_WATERING_FAILED] = "WATERING_FAILED",
+    [PLANT_STATUS_SOIL_DEGRADATION] = "SOIL_DEGRADATION",
+    [PLANT_STATUS_WARNING] = "WARNING",
+    [PLANT_STATUS_SENSOR_ERROR] = "SENSOR_ERROR",
+    [PLANT_STATUS_LEARNING] = "LEARNING"
 };
 
 /** =================================================================*
@@ -246,7 +252,7 @@ bool Console_ExecuteCommand(const char *cmd, char *response, uint16_t maxLen) {
             (void)snprintf(response, maxLen, "ERR no_diagnosis\r\n");
             return false;
         }
-        if (status < (sizeof(s_statusNames) / sizeof(s_statusNames[0]))) {
+        if ((status < (sizeof(s_statusNames) / sizeof(s_statusNames[0]))) && (s_statusNames[status] != NULL)) {
             statusStr = s_statusNames[status];
         }
         if (soil == NULL) {
@@ -317,7 +323,8 @@ bool Console_ExecuteCommand(const char *cmd, char *response, uint16_t maxLen) {
         (void)memcpy(numBuf, &dt[12], 2U);
         second = (uint8_t)atoi(numBuf);
 
-        if ((year < 2024U) || (month < 1U) || (month > 12U) ||
+        /* RTC は年を2桁で保持するので、2099年までに限る */
+        if ((year < 2024U) || (year > 2099U) || (month < 1U) || (month > 12U) ||
             (day < 1U) || (day > Console_GetDaysInMonth(year, month)) ||
             (hour > 23U) || (minute > 59U) || (second > 59U)) {
             (void)snprintf(response, maxLen, "ERR invalid_datetime\r\n");
@@ -346,17 +353,27 @@ bool Console_ExecuteCommand(const char *cmd, char *response, uint16_t maxLen) {
 
     if (strncmp(cmd, "C=", 2) == 0) {
         const char *comma = strchr(&cmd[2], ',');
-        int dryVal, wetVal;
+        char *end = NULL;
+        long dryVal, wetVal;
 
         if (comma == NULL) {
             (void)snprintf(response, maxLen, "ERR invalid_calib\r\n");
             return false;
         }
-        dryVal = atoi(&cmd[2]);
-        wetVal = atoi(comma + 1);
+        /* 数字以外の文字が混じった指定（例: 1000x,3000）は受け付けない */
+        dryVal = strtol(&cmd[2], &end, 10);
+        if ((end == &cmd[2]) || (end != comma)) {
+            (void)snprintf(response, maxLen, "ERR invalid_calib\r\n");
+            return false;
+        }
+        wetVal = strtol(comma + 1, &end, 10);
+        if ((end == (comma + 1)) || (*end != '\0')) {
+            (void)snprintf(response, maxLen, "ERR invalid_calib\r\n");
+            return false;
+        }
 
         if ((dryVal < 0) || (dryVal > 4095) || (wetVal < 0) || (wetVal > 4095) ||
-            (dryVal >= wetVal) || ((wetVal - dryVal) < (int)PLANT_DOCTOR_SOIL_CAL_MIN_DIFF)) {
+            (dryVal >= wetVal) || ((wetVal - dryVal) < (long)PLANT_DOCTOR_SOIL_CAL_MIN_DIFF)) {
             (void)snprintf(response, maxLen, "ERR invalid_calib\r\n");
             return false;
         }
@@ -496,8 +513,8 @@ void Console_Process10Ms(void) {
             if ((s_services.readRecord != NULL) && s_services.readRecord(s_dumpIndex, &record)) {
                 char csvLine[80];
                 (void)PlantLogRecord_FormatCsv(&record, csvLine, sizeof(csvLine));
+                /* FormatCsv が行末の改行まで付ける */
                 Console_EnqueueTxString(csvLine);
-                Console_EnqueueTxString("\r\n");
             }
             ++s_dumpIndex;
             if (s_dumpIndex >= s_dumpTotal) {

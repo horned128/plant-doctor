@@ -1,125 +1,87 @@
-# 第4章 オンデバイス逐次学習（ODL）の数学と実装アーキテクチャ
+# 第4章 オンデバイス逐次学習（ODL）の数学と7つの関門
 
-ディープラーニングの世界では、何万件もの学習データをストレージに保存し、巨大なGPUサーバー上で何十時間もかけて最適化を行う「バッチ学習（Batch Learning）」が常識とされています。
+一般的な機械学習では、大量のデータをサーバーに集めて何度も繰り返し学習させる「バッチ学習」が使われます。しかし ROHM ML63Q2557 の内蔵 RAM は **16 KB**（Flash は 256 KB）しかなく、1秒ごとに届くセンサーの履歴を何日分も蓄えておく余裕はありません。さらに、植物を現場で見守るエッジ AI にとって最も危険なのは、**「水切れや高温で苦しんでいるときの異常なデータを、いつもの健康な状態として覚えてしまうこと（モデルの汚染）」**です。
 
-しかし、ROHM ML63Q2557 の内蔵 RAM はわずか **32KB** です。もし過去のセンシングデータを何万回分もマイコン内に保存しようとすれば、数時間でメモリが枯渇しシステムが破綻します。
-
-本章では、過去のデータを一切保存することなく、メモリ消費量 $O(1)$ で何万回もの機械学習を継続できる数学的ブレークスルー **「逐次最小二乗法（Recursive Least Squares: RLS）」** と、現場での長期運用を支える多層防御インターロックについて解説します。
+そこで Plant Doctor は、「植物の『いつも』をその場で覚え、異常のときは覚えないエッジ AI」を実現するために、過去データを保持しない **オンデバイス逐次学習（Online Sequential Learning）** と、学習の前に置いた **7つの関門** を組み合わせています。本章ではその数理とファームウェア実装（`PlantAi.c`・`AiAnomaly.c`）を詳しく解説します。
 
 ---
 
-## 4.1 バッチ学習とデータ非保持型逐次学習（Online Sequential Learning）
+## 4.1 データ非保持型逐次学習（ODL）とメモリ消費量 $O(1)$
 
-組み込み機器において機械学習を実行する際、データの扱い方は従来のアプローチと根本から異なります。
+バッチ学習と、Solist-AI™ が行うオンデバイス逐次学習（ODL）の違いを整理します。
 
 ```mermaid
 flowchart TD
-    subgraph BATCH["一般的なディープラーニング（バッチ学習）"]
+    subgraph BATCH["クラウド・GPU型 バッチ学習"]
         direction TB
-        B1["全データ（何万〜何百万件）を巨大ストレージに蓄積"] --> B2["GPUサーバーで全データを何十回も反復巡回（エポック学習）"]
-        B2 --> B3["完成した重みを出荷・固定<br/>（現場環境や個体差への運用中適応は不可）"]
+        B1["何万〜何百万件もの過去データをストレージに保存"] --> B2["全データを何度も反復して重みを最適化"]
+        B2 --> B3["学習済みモデルを固定して出荷<br/>（鉢や置き場所ごとの違いには追従できない）"]
     end
 
-    subgraph ODL["Solist-AI™（オンデバイス逐次学習: ODL）"]
+    subgraph ODL["Solist-AI™ オンデバイス逐次学習 (ODL)"]
         direction TB
-        O1["最新の生体センサデータが 1 サンプル届く"] --> O2["その 1 サンプルのみを使い、ミリ秒でニューラルネット重みを微更新"]
-        O2 --> O3["使用したサンプルはその場で即時破棄（メモリに一切残さない）"]
-        O3 --> O4["次の 1 秒後に新しいサンプルが来たら同じ処理を反復"]
+        O1["1秒ごとに8次元の最新サンプルが1件届く"] --> O2["7つの関門を通過した健康なサンプルだけで<br/>重み行列と相関逆行列を即座に更新"]
+        O2 --> O3["使ったサンプルはその場で破棄（過去データは保存しない）"]
     end
 ```
 
-| 比較項目 | クラウド・GPU型 バッチ学習 | Solist-AI™ オンデバイス逐次学習 (ODL) |
+| 比較項目 | バッチ学習 | Solist-AI™ オンデバイス逐次学習（ODL） |
 |---|---|---|
-| **過去データの蓄積** | **必須**（大容量SSDやデータベースが不可欠） | **不要（過去データは1件も保存せず即時破棄）** |
-| **学習の実行場所** | 遠隔地のデータセンター (GPUサーバー) | **植物の鉢に挿したマイコンチップ内部** |
-| **必要RAM容量** | 数GB 〜 数十GB | **数KB 〜 数十KB（RAM 32KBマイコンで余裕）** |
-| **適応性 (Adaptability)**| 出荷時のモデルから変化しない（静的） | **個体差、設置環境、季節変化に自律適応（動的）** |
-| **計算複雑度** | $O(N \cdot M)$（データ件数 $N$ に比例して増大）| **$O(1)$（データ件数に依存せず常に一定）** |
+| **過去データの保存** | 必須（大容量ストレージが必要） | **不要（1件ごとに重みへ反映して即座に破棄）** |
+| **学習する場所** | クラウドサーバー・PC | **鉢の横にある ML63Q2557 内蔵アクセラレータ（`AI_PERI`）** |
+| **必要な RAM 容量** | 数百 MB 〜 数十 GB | **数 KB（16 KB RAM のマイコンで常時稼働）** |
+| **鉢・環境への適応** | 固定（出荷時のまま） | **その株・鉢・土・照明の「いつも」を現場で学習** |
 
-### メモリ消費量 $O(1)$ の工学的意義
-センサのサンプリング周期は 1.0秒（1Hz）です。仮に 24時間（86,400秒）動かすと 86,400 サンプルのデータが生成されます。これを素朴に保存しようとすれば約 $1.38\text{MB}$ のメモリが必要となり、32KB のマイコンでは到底保持できません。
-逐次学習では、到着した 1 サンプルの情報を行列演算によって即座に内部パラメータへ吸収・統合し、サンプルそのものは破棄するため、**何年稼働させてもメモリ使用量は 1 バイトたりとも増えません**。
+1秒に1回サンプリングすると、1日で 86,400 件のデータが生まれます。ODL では新しいサンプルが1件届くたびに、その統計情報をモデルの内部行列へ織り込んでサンプル自体は捨てるため、**何日間連続で動かしても学習データのために RAM が増えることはありません**。
 
 ---
 
-## 4.2 逐次最小二乗法（Recursive Least Squares: RLS）の数学
+## 4.2 逐次最小二乗法（RLS）と忘却係数 $\lambda = 1.0$
 
-過去のデータを保存しないにもかかわらず、過去の経験をすべて記憶し続けられる秘密は、信号処理や適応制御理論で用いられる **「逐次最小二乗法（RLS）」** と **「シャーマン・モリソンの公式（Sherman-Morrison Formula）」** にあります。
+過去データを保存せずに学習を積み重ねられる理由は、出力層の重み更新に **逐次最小二乗法（Recursive Least Squares: RLS）** と **シャーマン・モリソンの公式（Sherman-Morrison Formula）** を使っているためです。
 
-```mermaid
-graph TD
-    H["隠れ層の出力ベクトル h_t"] --> K["ゲインベクトル k_t の算出<br/>k_t = (P * h) / (λ + h^T * P * h)"]
-    K --> W["重み行列 W_t の更新<br/>W_t = W_{t-1} + k_t * (x - x̂)^T"]
-    K --> P["相関逆行列 P_t の更新 (Sherman-Morrison)<br/>P_t = (1/λ) * (P - k_t * h^T * P)"]
-    W & P --> STORE["メモリに保持するのは W と P だけ！<br/>入力サンプル x_t はその場で破棄"]
-```
+### 1. 保持する状態変数と更新式
 
-### 1. 状態変数：重み行列 $\mathbf{W}$ と 相関逆行列 $\mathbf{P}$
-ニューラルネットワークの隠れ層（64ノード）の出力を $\mathbf{h}_t \in \mathbb{R}^{64}$、目標出力（入力特徴量の復元値）を $\mathbf{x}_t \in \mathbb{R}^8$ とします。
-マイコンが内部メモリに保持し続けるのは、以下の固定サイズ変数のみです：
-1. **重み行列 $\mathbf{W} \in \mathbb{R}^{64 \times 8}$**: AIが獲得した現在の結合強度（知識）。
-2. **相関逆行列 $\mathbf{P} \in \mathbb{R}^{64 \times 64}$**: 過去に入力されたすべての特徴ベクトルの分散・共分散情報の要約（自己相関行列の逆行列）。
+隠れ層（64ノード）の出力ベクトルを $\mathbf{h}_t \in \mathbb{R}^{64}$、目標となる入力ベクトルを $\mathbf{x}_t \in \mathbb{R}^8$ としたとき、モデルが保持するのは **重み行列 $\mathbf{W}_t \in \mathbb{R}^{64 \times 8}$** と、過去の特徴量の共分散情報を要約した **相関逆行列 $\mathbf{P}_t \in \mathbb{R}^{64 \times 64}$** の2つだけです。新しいサンプルが届くと、次の3ステップで行列を更新します。
 
-### 2. 更新ステップの計算アルゴリズム
-時刻 $t$ において、新しい生体サンプル $\mathbf{x}_t$ が到着した瞬間、マイコン内部では以下のステップが実行されます。
+1. **ゲインベクトル $\mathbf{k}_t$ の算出**:
+   $$\mathbf{k}_t = \frac{\mathbf{P}_{t-1} \mathbf{h}_t}{\lambda + \mathbf{h}_t^T \mathbf{P}_{t-1} \mathbf{h}_t}$$
+   分母がスカラーになるため、計算量の大きい逆行列演算（$O(N^3)$）を行わずに $O(N^2)$ で更新できます。
+2. **重み行列 $\mathbf{W}_t$ の更新**:
+   $$\mathbf{W}_t = \mathbf{W}_{t-1} + \mathbf{k}_t (\mathbf{x}_t - \hat{\mathbf{x}}_t)^T$$
+3. **相関逆行列 $\mathbf{P}_t$ の更新**:
+   $$\mathbf{P}_t = \frac{1}{\lambda} \left( \mathbf{P}_{t-1} - \mathbf{k}_t \mathbf{h}_t^T \mathbf{P}_{t-1} \right)$$
 
-#### ステップ 1：ゲインベクトル $\mathbf{k}_t$ の計算
-新しい入力が現在の知識に対してどれだけ新規性（重みを修正すべき度合い）を持っているかを計算します：
+### 2. 忘却係数を $\lambda = 1.0$ に固定する理由
 
-$$\mathbf{k}_t = \frac{\mathbf{P}_{t-1} \mathbf{h}_t}{\lambda + \mathbf{h}_t^T \mathbf{P}_{t-1} \mathbf{h}_t}$$
+式中の $\lambda$（$0 < \lambda \le 1$）は忘却係数です。$\lambda < 1.0$ にすると古い記憶を早く忘れるようになりますが、植物のように変化が穏やかな対象で $\lambda < 1.0$ のまま何日も学習を続けると、$\mathbf{P}_t$ が $1/\lambda$ 倍され続けて数値が発散する「共分散ワインドアップ（Covariance Wind-up）」が起きます。
 
-分母はスカラー値となるため、高コストな行列の逆行列計算（通常 $O(N^3)$ の計算量）が不要であり、単純な除算で求まります。
-
-#### ステップ 2：再構成誤差に基づく重み行列 $\mathbf{W}_t$ の更新
-現在の復元値 $\hat{\mathbf{x}}_t$ と真値 $\mathbf{x}_t$ の誤差ベクトルにゲインを乗じ、重みを修正します：
-
-$$\mathbf{W}_t = \mathbf{W}_{t-1} + \mathbf{k}_t (\mathbf{x}_t - \hat{\mathbf{x}}_t)^T$$
-
-#### ステップ 3：相関逆行列 $\mathbf{P}_t$ の更新（シャーマン・モリソンの公式）
-新しいサンプルの分散情報を、相関逆行列へと織り込みます：
-
-$$\mathbf{P}_t = \frac{1}{\lambda} \left( \mathbf{P}_{t-1} - \mathbf{k}_t \mathbf{h}_t^T \mathbf{P}_{t-1} \right)$$
-
-この3式の計算が完了した瞬間、サンプル $\mathbf{x}_t$ が持っていた統計情報はすべて $\mathbf{W}_t$ と $\mathbf{P}_t$ の中に完全に凝縮されます。したがって、**$\mathbf{x}_t$ を即座に破棄しても、学習結果に一切の情報の欠落は生じません**。
-
----
-
-## 4.3 忘却係数（Forgetting Factor $\lambda$）と長期運用の安定性
-
-数式中のパラメータ $\lambda$（$0 < \lambda \le 1$）は **忘却係数（Forgetting Factor）** と呼ばれます。
-
-- $\lambda < 1.0$（例: $0.95$）の場合、過去のサンプルの重みが指数関数的に減衰し、最新のデータに敏感に追従するようになります。
-- しかし、植物モニタリングのように何ヶ月も連続稼働させる場合、$\lambda < 1.0$ を適用し続けると、入力データが安定している期間に $\mathbf{P}$ 行列の固有値が無限に増大し、数値がオーバーフローする「共分散ワインドアップ（Covariance Wind-up）」という現象が発生します。
-
-### 本システムのパラメータ設計
-`PlantAi.c` では、長期的な数値安定性と堅牢性を最優先し、忘却係数を厳密な **$\lambda = 1.0$（bfloat16: `0x3F80`）** に設定しています。
+そのため `PlantAi_Init` では、忘却係数を **`1.0`（`bfloat16` で `0x3F80`）** に設定し、長期間の連続運転でも数値が発散しないようにしています。
 
 ```c
-/* ai/PlantAi.c:116 */
-s_solistAiParams.forgettingFactor = 0x3F80; /* 1.0 (bfloat16) - prevents RLS covariance wind-up */
+/* ai/PlantAi.c: Solist-AI 初期化パラメータ */
+s_solistAiParams.inputSize = SOLIST_AI_FEATURE_DIM;  /* 8 */
+s_solistAiParams.hiddenSize = 64U;                   /* 64 */
+s_solistAiParams.outputSize = SOLIST_AI_FEATURE_DIM; /* 8 */
+s_solistAiParams.forgettingFactor = 0x3F80;          /* 1.0 (bfloat16) */
+s_solistAiParams.activationFunction = ODL_ACTV_SIGMOID;
+s_solistAiParams.lossFunction = ODL_LOSS_MSE;
 ```
-
-これにより、長期間の無停止連続稼働においても行列の数値発散が物理的に抑止され、安定した生体監視が継続されます。
 
 ---
 
-## 4.4 3段階の自律学習フェーズ（Phase 0 / 1 / 2）
+## 4.3 学習の進行段階と判定開始までの流れ
 
-Plant Doctor のオンデバイス学習は、電源投入直後から定常運用に至るまで、累積学習回数（`aiTrainCount`）に応じて3つのフェーズを自動的に遷移します。
+電源を入れてからの累積学習回数 `s_solistAiTrainCount` に応じて、システムは3つの段階（`s_solistAiPhase`）を進みます。同時に、第3章で解説した変化速度の履歴待機（15分）と誤差基準の学習（600件）が進みます。
 
 ```mermaid
-stateDiagram-v2
-    [*] --> Phase0: 電源投入
-    Phase0: Phase 0 - PROFILING (0〜99ステップ)<br/>個体ベースライン・設置環境の初期獲得
-    Phase1: Phase 1 - STABILIZING (100〜499ステップ)<br/>日周変動・蒸散特性の安定化学習
-    Phase2: Phase 2 - MONITORING (500ステップ以上)<br/>成熟モデルによる高感度異常監視
-
-    Phase0 --> Phase1: aiTrainCount ≧ 100
-    Phase1 --> Phase2: aiTrainCount ≧ 500
+flowchart LR
+    P0["Phase 0: PROFILING<br/>(学習 0〜99回)<br/>初期プロファイリング<br/>ストレス50未満まで学習許可"] --> P1["Phase 1: STABILIZING<br/>(学習 100〜499回)<br/>ストレス30未満で学習<br/>15分経過後から誤差基準を収集"]
+    P1 --> P2["Phase 2: MONITORING<br/>(学習 500回〜)<br/>健康サンプル600件到達（起動後約25分）で<br/>異常度算出・WARNING判定を開始"]
 ```
 
 ```c
-/* ai/PlantAi.c: 学習フェーズ判定コード */
+/* ai/PlantAi.c: 累積学習回数に応じたフェーズ更新 */
 ++s_solistAiTrainCount;
 if (s_solistAiTrainCount < 100U) {
     s_solistAiPhase = 0U; /* PROFILING */
@@ -130,84 +92,122 @@ if (s_solistAiTrainCount < 100U) {
 }
 ```
 
-1. **Phase 0: PROFILING（初期プロファイリング期: 0〜99ステップ）**:
-   電源を入れて最初の約100秒間です。植えられている植物の初期土壌水分や、設置された部屋の基本温湿度といった「その環境固有のベースライン」を急速学習します。
-2. **Phase 1: STABILIZING（安定化学習期: 100〜499ステップ）**:
-   稼働開始から数分〜数十分の段階です。エアコンの風や光の変化に対する微小な変動パターンを学習し、ニューラルネットワークの再構成損失（MSE）が滑らかに低下していきます。
-3. **Phase 2: MONITORING（定常監視期: 500ステップ以上）**:
-   十分な学習を完了し、モデルの結合強度が最適値に収束した成熟フェーズです。この段階に達すると、AIは正常な生体リズムを完全に熟知しているため、微小な異常パターンに対しても鋭敏に MSE が反応するようになります。
+1. **起動〜15分**: 1分ごとの履歴がまだ短いため、変化速度の特徴量（$x_6, x_7$）は中間値 `128` に固定して Solist-AI を学習させます。最初の100回（Phase 0）は立ち上げ時のわずかな偏りで学習が止まらないよう、土壌・熱の部分スコアが40未満なら総合ストレス50未満まで学習を許可します。
+2. **15分〜約25分**: 変化速度の履歴が15分分たまり（`isRateReady == true`）、かつ学習回数が100回以上（Phase 1〜2）になると、`AiAnomaly_Update` が健康なときの再構成誤差の平均とばらつきを集め始めます。
+3. **起動後約25分以降**: 健康なサンプルが **600件（約10分）** たまると基準が確立し（`AiAnomaly_IsReady == true`）、異常度 0〜100 の算出と `WARNING` 判定が始まります。
 
 ---
 
-## 4.5 多層防御安全インターロックと数値発散自己修復機構
+## 4.4 健康なモデルを汚さない「7つの関門」
 
-機械学習において最も恐ろしい事態は、**「植物が病気や水切れで苦しんでいる異常時のデータを、誤って『正常』として学習してしまうこと（データ汚染 / Catastrophic Forgetting）」** です。異常を正常として覚えてしまえば、AIは二度と異常を検知できなくなります。
-
-これを防ぐため、`PlantAi.c` は学習実行の直前に厳格な**安全インターロック判定（`isSafeToTrain`）**を実施します。
+オンデバイス学習で最も重要なのが、「いつ学び、いつ学ばないか」の制御です。`PlantAi.c` と `AiAnomaly.c` では、学習（`OSUAD_StartTrain`）の前に**7つの関門**を置き、健康なモデルが異常データや過渡状態によって汚されるのを防いでいます。
 
 ```mermaid
 flowchart TD
-    POLL["10ms 周期処理 (PlantAi_Process10Ms)"] --> CHK1{"センサハードウェア健全か？<br/>(soil, leaf, air, lux == OK)"}
-    CHK1 -- NO --> SKIP["学習スキップ（データ不信）"]
-    CHK1 -- YES --> CHK2{"ルール診断が HEALTHY か？"}
-    CHK2 -- NO (異常診断中) --> SKIP
-    CHK2 -- YES --> CHK3{"ストレススコア < 30 ?"}
-    
-    CHK3 -- YES (超低ストレス) --> TRAIN["学習実行許可 (isSafeToTrain = true)"]
-    CHK3 -- NO --> CHK4{"初期プロファイリング中<br/>(count < 100) ?"}
-    
-    CHK4 -- NO --> SKIP
-    CHK4 -- YES --> CHK5{"ストレス < 50 かつ<br/>土壌部分スコア < 40 かつ<br/>熱部分スコア < 40 ?"}
-    
-    CHK5 -- YES (起動直後の一時的偏り) --> TRAIN
-    CHK5 -- NO (致命的乾燥または熱負荷) --> SKIP
+    SAMPLE["1秒ごとのサンプル取得・推論完了"] --> G1{"関門1: ルール診断が<br/>PLANT_STATUS_HEALTHY ?"}
+    G1 -- NO --> BLOCK["学習しない (モデル保護)"]
+    G1 -- YES --> G2{"関門2: 4系統のセンサーが<br/>すべて SENSOR_HEALTH_OK ?"}
+    G2 -- NO --> BLOCK
+    G2 -- YES --> G3{"関門3: ストレス < 30 ?<br/>(100回未満は < 50 かつ 土壌・熱 < 40)"}
+    G3 -- NO --> BLOCK
+    G3 -- YES --> G4{"関門4: 給水応答の測定中ではない？<br/>(respResult != MEASURING)"}
+    G4 -- NO --> BLOCK
+    G4 -- YES --> G5{"関門5: 給水後1時間半 (5400件) の<br/>休止期間ではない？"}
+    G5 -- NO --> HOLD["判定状態を消し、学習も休む"]
+    G5 -- YES --> G6{"関門6: デモモードのずらし値<br/>適用中ではない？ (!isDemoAdjusted)"}
+    G6 -- NO --> BLOCK
+    G6 -- YES --> G7{"関門7: AI異常度が50未満 かつ !isAnomaly ?<br/>(AiAnomaly_AllowTraining)"}
+    G7 -- "YES (いつもの健康状態)" --> TRAIN["毎秒 Solist-AI を学習"]
+    G7 -- "NO (いつもと違う)" --> THROTTLE{"ずれが3時間 (10800件)<br/>以上続いたか？"}
+    THROTTLE -- "NO (3時間未満)" --> SPARSE["60サンプル (約1分) に1回だけ学習<br/>※誤差基準は更新しない"]
+    THROTTLE -- "YES (照明変化・移動など)" --> RELEARN["新しい『いつも』として<br/>毎秒の学習を再開"]
 ```
 
-### 1. 多層防御安全インターロックの実装
+### 関門1〜4：ルール診断・センサー健全性・低ストレス・給水応答測定外
+
+まずルール上の安全条件（`isRuleSafe`）として、①診断が `PLANT_STATUS_HEALTHY` であること、②土壌・葉温・温湿度・照度の4系統すべてが `SENSOR_HEALTH_OK` であること、③ストレススコアが `30` 未満（学習100回未満の立ち上げ時のみ、土壌・熱の部分スコアが `40` 未満なら `50` 未満）であること、④給水後5分間の効果測定中（`WATERING_RESPONSE_MEASURING`）ではないことを確認します。
+
+### 関門5：給水後1時間半（5400サンプル）の休止
+
+水やりが行われると、土壌水分は数分間で急激に上がります。ところが、Solist-AI に入力している土壌水分の変化速度（$x_7$）は**直近60分間の履歴**から計算されるため、土が湿り終わったあとも60分間は「土壌水分が猛烈な速さで増えている」という値が特徴量に残り続けます。想定値の計算で確かめたところ、給水直後に AI の判定や学習を動かすと、給水が成功（OK）したあとも約1時間にわたって再構成誤差が跳ね上がり、`WARNING` が出続けてしまうことが分かりました。
+
+そこで、自動・手動を問わずポンプが動いたとき（`PlantAi_NotifyWatering`）には、**`PLANT_DOCTOR_AI_POST_WATERING_HOLD_SAMPLES = 5400`（1秒周期で5400サンプル＝1時間半）** の休止カウンタをセットします。
+
 ```c
-/* ai/PlantAi.c:250-264 */
-bool isSafeToTrain = false;
-if (s_diagnosisState.status == PLANT_STATUS_HEALTHY &&
-    healthReport.soilHealth == SENSOR_HEALTH_OK &&
-    healthReport.leafHealth == SENSOR_HEALTH_OK &&
-    healthReport.airHumHealth == SENSOR_HEALTH_OK &&
-    healthReport.luxHealth == SENSOR_HEALTH_OK) {
-    if (s_stressScore < 30U) {
-        isSafeToTrain = true;
-    } else if ((s_solistAiTrainCount < 100U) &&
-               (s_stressScore < 50U) &&
-               (stressOutput.soilPartialScore < 40U) &&
-               (stressOutput.heatPartialScore < 40U)) {
-        isSafeToTrain = true;
-    }
+/* ai/PlantAi.c: 給水通知時に1時間半（5400サンプル）の休止を設定 */
+void PlantAi_NotifyWatering(const PUMP_WATERING_EVENT *event, uint32_t currentTick) {
+    (void)currentTick;
+    WateringResponse_NotifyWatering(&s_wateringRespState, event, s_aiTick);
+    /* 給水後は約1時間半、AIの判定と学習を休む（給水で直前の「いつもと違う」も解除する） */
+    s_aiPostWateringHoldSamples = PLANT_DOCTOR_AI_POST_WATERING_HOLD_SAMPLES;
+    AiAnomaly_ClearJudgement(&s_aiAnomaly);
 }
 ```
 
-- **定常運用時**: ストレススコアが **30未満（完全健全域）** であり、かつ全センサが通信正常であるときのみ学習を行います。水切れや熱負荷が少しでも生じている間は、学習ゲートが完全に遮断されます。
-- **初期プロファイリング期の安全緩和**: システム起動直後は、24時間積算照度の立ち上がり途上であることや、土壌の初期状態により、一時的にストレススコアが 30〜45 付近を示すことがあります。この初期段階に限り、致命的な土壌乾燥や熱ストレス（部分スコア $\ge 40$）が存在しないことを条件に総合閾値を 50 まで緩和し、スムーズなベースライン獲得を実現しています。
+この1時間半の間は、Solist-AI の学習を行わないだけでなく、`AiAnomaly_ClearJudgement` によって異常度（`score`）と `WARNING` 判定（`isAnomaly`）を `0` / `false` に保ちます。一方で、給水前までに学んだ**健康時の誤差の平均（`meanQ16`）とばらつき（`deviationQ16`）は消さずに残してある**ため、1時間半が過ぎて変化速度の履歴が落ち着けば、すぐに元の基準で監視を再開できます（もちろん休止中も、給水失敗などのルール診断は休まず動いています）。
 
-### 2. 数値発散ウォッチドッグ（Divergence Guard）による自律復旧
-万が一、極端な外乱ノイズ等によってニューラルネットワーク内部の数値計算が飽和・発散した場合に備え、自律的な自己修復機構を搭載しています。
+### 関門6：デモモードのオフセット補正中は学ばない
+
+展示や動作確認で使うデモモード（DEMO2・DEMO3・DEMO5）では、スイッチやコンソール操作で土壌水分や葉温に擬似的なオフセット（ずらし値）を加えます。このオフセットはルール診断とストレス算出のコピー（`diagFeatures`・`diagHealth`）にだけ適用され、DEMO3 では実際に乾燥ストレスと判定されてポンプが動きます。しかし、オフセットが1つでも入っている間（`isDemoAdjusted == true`）は Solist-AI の学習を止めるため、デモ操作で AI のモデルや誤差基準が汚れることはありません。
+
+### 関門7：異常時の学習間引き（1分に1回）と、3時間後の学び直し
+
+関門1〜6をすべて通過して `isRuleSafe == true` になったとしても、ルールしきい値に達する前の「いつもと違う」変化が始まっているかもしれません。そこで最後に `AiAnomaly_AllowTraining`（`ai/AiAnomaly.c`）を通します。
 
 ```c
-/* ai/PlantAi.c: 数値発散ウォッチドッグ */
+/* ai/AiAnomaly.c: いつもと違う間は学習を絞り、3時間続いたら学び直す */
+bool AiAnomaly_AllowTraining(AI_ANOMALY_STATE *state, const AI_ANOMALY_CONFIG *config, bool isRuleSafe) {
+    if ((state == NULL) || (config == NULL) || !isRuleSafe) {
+        return false;
+    }
+    if (!state->isAnomaly && (state->score < config->onScore)) {
+        state->deviatingSamples = 0U;
+        return true;
+    }
+    if (state->deviatingSamples < UINT16_MAX) {
+        ++state->deviatingSamples;
+    }
+    if (state->deviatingSamples >= config->relearnAfterSamples) {
+        return true;
+    }
+    return (config->relearnEverySamples > 0U) &&
+           ((state->deviatingSamples % config->relearnEverySamples) == 0U);
+}
+```
+
+- **平常時（`!isAnomaly` かつ `score < 50`）**: 毎秒（1サンプルごと）Solist-AI を学習させ、誤差の基準も更新します。
+- **いつもと違う間（`score >= 50` または `isAnomaly == true`）**: 進行中の乾燥や異常を「いつも」として覚えてしまわないよう、誤差の基準更新を止め、Solist-AI の学習も **`relearnEverySamples = 60`（60サンプル＝約1分に1回）** だけに絞ります。
+- **3時間（10800サンプル）続いたときの学び直し**: もしルール上は健康でストレスも30未満のまま、「いつもと違う」状態が **`relearnAfterSamples = 10800`（約3時間）** 続いた場合は、植物の異常ではなく「照明の点灯・消灯」や「鉢の置き場所の変更」によって環境が切り替わったと判断し、新しい「いつも」に馴染ませるために毎秒の学習を再開します。
+  - **なぜ30分ではなく3時間なのか**: 第2章で述べたとおり、ストレスの重みを `35 / 35 / 15 / 15` にしたことで、土壌水分が $52\%$ から $30\%$ へ乾いていく途中でもストレススコアは 30 未満に保たれます。想定値の計算で検証したところ、学び直しまでの時間が30分（1800サンプル）だと、乾いている最中に30分が経過して「速い乾き」を新しい「いつも」として覚え直してしまい、`WARNING` が途中で消えてしまうことが分かりました。そこで学び直しまでの時間を **3時間（10800サンプル）** に延ばし、数時間かけて進む乾燥のあいだ `WARNING` を維持できるようにしています。
+
+---
+
+## 4.5 数値発散ウォッチドッグとタイムアウト時の安全停止
+
+長期間の稼働中に強いノイズなどでアクセラレータ内部の演算が飽和したり、ハードウェアが応答しなくなったりした場合でも、システム全体の監視やポンプ制御を止めないための保護処理を入れています。
+
+```c
+/* ai/PlantAi.c: 数値発散ウォッチドッグによるモデルと基準の初期化 */
 if (fLoss >= 1.0f) {
     if (++s_solistAiDivergenceCount >= 10U) {
-        /* 健全状態にもかかわらず損失最大(1.0)が10周期連続した場合は自律リセット */
         OSUAD_Initialize(&s_solistAiParams, 1U);
         s_solistAiDivergenceCount = 0U;
         s_solistAiLatestLossPpm = 250U;
+        /* モデルを作り直したら、学習の段階と異常度の基準も最初から作り直す */
+        s_solistAiTrainCount = 0U;
+        s_solistAiPhase = 0U;
+        AiAnomaly_Reset(&s_aiAnomaly);
     }
 } else {
     s_solistAiDivergenceCount = 0U;
 }
 ```
 
-植物が健全であるにもかかわらず、再構成損失が最大値（1.0）に張り付いた状態が 10秒連続した場合、システムは計算異常と判断して `AI_PERI` の学習パラメータを自律初期化し、即座に健全な再プロファイリングへと復帰します。
+1. **数値発散からの自己修復**: 学習可能な健康状態であるにもかかわらず、再構成誤差が最大値（`1.0f`＝`10000 ppm`）に張り付いた状態が **10回連続** した場合は、`OSUAD_Initialize` で Solist-AI の重みを初期化します。このとき、累積学習回数 `s_solistAiTrainCount` と学習フェーズ `s_solistAiPhase` を `0` に戻し、`AiAnomaly_Reset` で異常度の基準も最初から作り直すことで、モデルと基準の食い違いを防ぎます。
+2. **アクセラレータ応答タイムアウト時の安全停止**: `OSUAD_StartPredict` や `OSUAD_StartTrain` の完了待ちループ（上限 `50000` ループ、待機中もウォッチドッグをクリア）がタイムアウトした場合は、`s_solistAiInitialized = false` にして以降の AI 呼び出しを止めるとともに、`AiAnomaly_Reset(&s_aiAnomaly)` で異常度を `0` にリセットします。これにより、AI が止まったあともルール診断と自動給水はそのまま動き続けます。
 
 ---
 
-## 📖 ナビゲーション
+## ナビゲーション
 
 **[← 第3章 自己符号化器（Autoencoder）と多次元生体異常検知](03_autoencoder_and_anomaly_detection.md)** ｜ [目次 (README)](README.md) ｜ **[第5章 システム統合・通信テレメトリと生体コックピット →](05_system_integration_and_telemetry.md)**
-

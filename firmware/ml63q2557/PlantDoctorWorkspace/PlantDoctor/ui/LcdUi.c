@@ -376,7 +376,7 @@ void LcdUi_FormatPage(const LCD_DIAGNOSIS_VIEW_DATA *diagData,
                 }
             } else {
                 (void)snprintf(line1, (size_t)lineSize, "AIR:--    H:--%%");
-                (void)snprintf(line2, (size_t)lineSize, "LUX:--   TANK:EMP");
+                (void)snprintf(line2, (size_t)lineSize, "LUX:--  TANK:EMP");
             }
             break;
     }

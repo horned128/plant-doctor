@@ -12,7 +12,7 @@ typedef enum {
     PUMP_CONTROL_STATUS_OK = 0,
     PUMP_CONTROL_STATUS_EMPTY,
     PUMP_CONTROL_STATUS_COOLDOWN,
-    PUMP_CONTROL_STATUS_ERROR                               /**< @note 現状未使用（互換性維持のため保持） */
+    PUMP_CONTROL_STATUS_ERROR                               /**< 監視中以外の手動給水要求など、受け付けられない要求 */
 } PUMP_CONTROL_STATUS;
 
 typedef enum {

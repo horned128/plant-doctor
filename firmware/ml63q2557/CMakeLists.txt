@@ -59,6 +59,7 @@ set(PLANT_DOCTOR_SOURCES
   ${PLANT_DOCTOR_DIR}/startup_ML63Q25x7.c
   ${PLANT_DOCTOR_DIR}/system_ML63Q25x7.c
   ${PLANT_DOCTOR_DIR}/actuator/PumpControl.c
+  ${PLANT_DOCTOR_DIR}/ai/AiAnomaly.c
   ${PLANT_DOCTOR_DIR}/ai/PlantAi.c
   ${PLANT_DOCTOR_DIR}/ai/PlantDiagnosis.c
   ${PLANT_DOCTOR_DIR}/ai/PlantFeature.c

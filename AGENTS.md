@@ -18,8 +18,10 @@ plant-doctor/
 │   └── workflows/
 │       └── build.yml              CI ビルド定義
 ├── .vscode/                       VS Code のビルド・書き込み・デバッグ設定
-├── docs/                          設計・開発・配線ドキュメント
-├── firmware/                      マイコン別ファームウェア
+├── docs/                          設計・開発・配線・解説ドキュメント
+├── firmware/                      マイコン別ファームウェア（ml63q2557 / esp32s3）
+├── software/                      Web ダッシュボード（plant-medical）
+├── tests/                         ホスト単体テスト（tests/host）
 ├── .gitattributes                 Git の属性設定
 ├── .gitignore                     Git 管理対象外設定
 ├── .gitmodules                    CMSIS_6 submodule 定義
@@ -31,18 +33,22 @@ plant-doctor/
 
 ```text
 docs/
+├── diagram/                       システム構成図・実機写真
 ├── firmware/
 │   ├── CODING_RULES.md            ファームウェアのコーディングルール
 │   └── ml63q2557/
-│       └── ARCHITECTURE.md        ML63Q2557 ファームウェアの設計書
-├── IMPLEMENTATION_PLAN.md         機能実装の計画
-├── PIN_CONNECTIONS.md             基板・センサー・LCD のピン接続
-├── PROTOTYPE_PLAN.md              プロトタイプ全体の計画
-└── VSCODE_SETUP.md                Windows / macOS の VS Code 開発環境
+│       ├── ARCHITECTURE.md        ML63Q2557 ファームウェアの設計書
+│       └── VSCODE_SETUP.md        Windows / macOS の VS Code 開発環境
+├── hardware/
+│   ├── DT-EBML63Q2557_hardware_users_manual_Rev.20250527.pdf
+│   │                              DT-EBML63Q2557 ハードウェアマニュアル
+│   └── PIN_CONNECTIONS.md         基板・センサー・LCD のピン接続
+├── textbook/                      生体 AI・オンデバイス学習の技術解説（全5章）
+└── PLAN.md                        統合実行計画
 ```
 
 VS Code での初回セットアップ、ビルド、Flash、F5 デバッグの具体的な手順は
-`docs/VSCODE_SETUP.md` を参照してください。
+`docs/firmware/ml63q2557/VSCODE_SETUP.md` を参照してください。
 
 ## ML63Q2557 ファームウェア
 
@@ -103,14 +109,15 @@ firmware/ml63q2557/external/CMSIS/CMSIS/Core/Include
 ```text
 firmware/ml63q2557/PlantDoctorWorkspace/PlantDoctor/
 ├── actuator/                      アクチュエータ制御（ポンプ）
-├── ai/                            植物診断 AI・特徴量
-├── app/                           アプリケーション本体・状態機械
-├── board/                         基板依存処理（LED・スイッチ・電源・タイマ）
+├── ai/                            植物診断 AI・特徴量・異常度判定（AiAnomaly）
+├── app/                           アプリケーション本体・状態機械・給水判断・デモモード
+├── board/                         基板依存処理（LED・スイッチ・電源・タイマ・RTC）
 ├── config/                        アプリケーション設定
+├── console/                       UART コンソール
 ├── drivers/                       LCD などのデバイスドライバ
 ├── inc/                           共通ステータス型などの公開インクルード
-├── sensors/                       I2C バス、環境・葉温・土壌水分・液面センサー
-├── storage/                       植物ログなどの保存処理
+├── sensors/                       I2C バス、環境・葉温・土壌水分・液面センサー、テレメトリ
+├── storage/                       植物ログ（FeRAM リングバッファ・キュー）
 ├── ui/                            LCD 表示・画面制御
 ├── src/
 │   └── main.c                     エントリポイント
@@ -134,8 +141,10 @@ firmware/ml63q2557/CMakeLists.txt
   └── external/CMSIS/.../Include         CMSIS Core
 
 PlantDoctor/app/AppStateMachine.c
+  ├── actuator/                          ポンプ駆動と安全上限
+  ├── ai/                                植物診断・ストレス算出・Solist-AI 異常度判定
   ├── board/                             LED・スイッチ・電源・タイマ
-  ├── sensors/                           センサー取得と I2C バス
+  ├── sensors/                           センサー取得・I2C バス・テレメトリ送信
   └── ui/                                LCD 表示と LCD I2C 通信
 ```
 
